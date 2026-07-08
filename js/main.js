@@ -1,1 +1,3 @@
-console.log('Hell Tower loaded');
+document.addEventListener('DOMContentLoaded', () => {
+  window.DB.UI.init();
+});
