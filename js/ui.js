@@ -384,6 +384,11 @@
 
   function init() {
     root = document.getElementById('app');
+    if (root.dataset.uiInitialized) {
+      render();
+      return;
+    }
+    root.dataset.uiInitialized = 'true';
 
     root.addEventListener('click', (e) => {
       const handCard = e.target.closest('.hand-card');
