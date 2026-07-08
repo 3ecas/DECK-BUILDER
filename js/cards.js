@@ -116,13 +116,13 @@
     // ---------------- BLUE (defense) ----------------
     guard: {
       id: 'guard', name: 'Guard', type: TYPE.DEFENSE, color: COLOR.BLUE, cost: 0, rarity: 'starter',
-      desc: (m = 1) => `Gain ${r(2, m)} Block.`,
-      play(ctx) { ctx.block(2); },
+      desc: (m = 1) => `Gain ${r(1, m)} Block.`,
+      play(ctx) { ctx.block(1); },
     },
     iron_wall: {
       id: 'iron_wall', name: 'Iron Wall', type: TYPE.DEFENSE, color: COLOR.BLUE, cost: 0, rarity: 'common',
-      desc: (m = 1) => `Gain ${r(4, m)} Block.`,
-      play(ctx) { ctx.block(4); },
+      desc: (m = 1) => `Gain ${r(3, m)} Block.`,
+      play(ctx) { ctx.block(3); },
     },
     parry: {
       id: 'parry', name: 'Parry', type: TYPE.DEFENSE, color: COLOR.BLUE, cost: 0, rarity: 'common',
@@ -156,13 +156,13 @@
     },
     bulwark: {
       id: 'bulwark', name: 'Bulwark', type: TYPE.DEFENSE, color: COLOR.BLUE, cost: 0, rarity: 'common',
-      desc: (m = 1) => `Gain ${r(3, m)} Block.`,
-      play(ctx) { ctx.block(3); },
+      desc: (m = 1) => `Gain ${r(2, m)} Block.`,
+      play(ctx) { ctx.block(2); },
     },
     aegis: {
       id: 'aegis', name: 'Aegis', type: TYPE.DEFENSE, color: COLOR.BLUE, cost: 0, rarity: 'rare',
-      desc: (m = 1) => `Gain ${r(2, m)} Block. Gain 2 Thorns for the rest of combat.`,
-      play(ctx) { ctx.block(2); ctx.status('self', 'thorns', 2); },
+      desc: (m = 1) => `Gain ${r(1, m)} Block. Gain 2 Thorns for the rest of combat.`,
+      play(ctx) { ctx.block(1); ctx.status('self', 'thorns', 2); },
     },
 
     // ---------------- YELLOW (healing / strategic healing) ----------------
