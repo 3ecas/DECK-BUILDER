@@ -76,8 +76,9 @@
             <li>Some cards steal Block or Strength straight from the enemy, cleanse your own bad conditions, or repeat an effect you already played this turn.</li>
             <li>Cards come in five color archetypes &mdash; <b style="color:#ff6659">red</b> (attack &amp; bleed), <b style="color:#8bc34a">green</b> (poison), <b style="color:#6fa8dc">blue</b> (defense), <b style="color:#e8d16a">yellow</b> (healing), and <b style="color:#c9c9c9">grey</b> (draw, actions, debuffs). Rewards rotate through all five, so keep an eye out for synergies.</li>
             <li>Click a card in your hand to play it. Hover to see it up close.</li>
-            <li>Defeat an enemy to pick one reward: a new card, HP, or gold (plus a little bonus gold on every kill). Every 5th enemy is a tougher boss &mdash; beat one for a bigger reward and a shot at one of its own cards.</li>
-            <li>Between fights you'll choose from 3 paths: a battle, a treasure chest (free card), a tavern (rest and heal), or a shop (spend gold on cards, pricier at greater depth).</li>
+            <li>The climb is continuous &mdash; win a fight and the next enemy appears (plus a little bonus gold on every kill). Every 3rd floor you also get to pick a bigger reward: a new card, HP, or gold.</li>
+            <li>Every 5th enemy is a tougher boss &mdash; beat one for a bigger reward and a shot at one of its own cards.</li>
+            <li>Between some fights you might stumble onto a tavern (free heal), a chest (free card), or a shop (spend gold on cards, pricier at greater depth) &mdash; but not always.</li>
             <li>Fall, and the run ends.</li>
           </ul>
           <div class="menu-actions">
@@ -228,49 +229,28 @@
       </div>`;
   }
 
-  function pathOptionHtml(opt, i) {
-    if (opt.type === 'enemy') {
-      const en = opt.enemy;
-      return `
-        <div class="path-card path-enemy ${en.isBoss ? 'path-boss' : ''}" data-path-index="${i}">
-          <div class="path-icon">${en.emoji}</div>
-          <div class="path-title">${en.isBoss ? 'Boss: ' : ''}${esc(en.name)}</div>
-          <div class="path-desc">${en.hp} HP &middot; ${en.cardsPerTurn} card${en.cardsPerTurn > 1 ? 's' : ''}/turn</div>
-        </div>`;
+  function renderBonus() {
+    const { bonusResult, player } = Game.state;
+    let icon = '🎁';
+    let title = 'Treasure';
+    let desc = '';
+    if (bonusResult.type === 'tavern') {
+      icon = '🍺';
+      title = 'Tavern';
+      desc = `You rest and heal ${bonusResult.healed} HP.`;
+    } else if (bonusResult.type === 'chest') {
+      icon = '🎁';
+      title = 'Treasure Chest';
+      const card = Cards.get(bonusResult.cardId);
+      desc = `You find ${card.name} and add it to your deck.`;
     }
-    if (opt.type === 'chest') {
-      return `
-        <div class="path-card path-chest" data-path-index="${i}">
-          <div class="path-icon">🎁</div>
-          <div class="path-title">Treasure Chest</div>
-          <div class="path-desc">Find a free card.</div>
-        </div>`;
-    }
-    if (opt.type === 'tavern') {
-      return `
-        <div class="path-card path-tavern" data-path-index="${i}">
-          <div class="path-icon">🍺</div>
-          <div class="path-title">Tavern</div>
-          <div class="path-desc">Rest and recover some HP.</div>
-        </div>`;
-    }
-    return `
-      <div class="path-card path-shop" data-path-index="${i}">
-        <div class="path-icon">🛒</div>
-        <div class="path-title">Shop</div>
-        <div class="path-desc">Spend gold on new cards.</div>
-      </div>`;
-  }
-
-  function renderPath() {
-    const { pathOptions, player, floor } = Game.state;
-    const cardsHtml = pathOptions.map(pathOptionHtml).join('');
     return `
       <div class="overlay">
         <div class="overlay-panel">
-          <h1>Choose Your Path</h1>
-          <p class="tagline">Floor ${floor} cleared &middot; 💰 ${player.gold} gold &middot; ❤️ ${player.hp}/${player.maxHp} HP</p>
-          <div class="path-options">${cardsHtml}</div>
+          <h1>${icon} ${title}</h1>
+          <p class="tagline">${esc(desc)}</p>
+          <p class="tagline">💰 ${player.gold} gold &middot; ❤️ ${player.hp}/${player.maxHp} HP</p>
+          <button class="btn btn-primary continue-bonus-btn">Continue</button>
         </div>
       </div>`;
   }
@@ -345,8 +325,8 @@
     let html = '';
     if (phase === 'intro') {
       html = galleryOpen ? renderGallery() : renderIntro();
-    } else if (phase === 'path') {
-      html = renderPath();
+    } else if (phase === 'bonus') {
+      html = renderBonus();
     } else if (phase === 'shop') {
       html = renderShop();
     } else if (phase === 'playing') {
@@ -400,12 +380,12 @@
       const viewCardsBtn = e.target.closest('.view-cards-btn');
       const backToMenuBtn = e.target.closest('.back-to-menu-btn');
       const echoCard = e.target.closest('.echo-choice-card');
-      const pathCard = e.target.closest('.path-card');
       const shopBuyBtn = e.target.closest('.shop-buy-btn');
       const leaveShopBtn = e.target.closest('.leave-shop-btn');
+      const continueBonusBtn = e.target.closest('.continue-bonus-btn');
 
-      if (pathCard) {
-        Game.choosePath(Number(pathCard.dataset.pathIndex));
+      if (continueBonusBtn) {
+        Game.continueFromBonus();
         render();
       } else if (shopBuyBtn && !shopBuyBtn.disabled) {
         Game.buyCard(Number(shopBuyBtn.dataset.shopIndex));

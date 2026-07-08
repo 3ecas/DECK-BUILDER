@@ -630,67 +630,7 @@ body {
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 255, 255, 0.18);
 }
 
-/* ---------- path choice & shop ---------- */
-.path-options {
-  display: flex;
-  justify-content: center;
-  gap: 18px;
-  flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-
-.path-card {
-  cursor: pointer;
-  width: 150px;
-  padding: 18px 12px;
-  border-radius: 12px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  background: linear-gradient(160deg, #2a1010, #170808);
-  text-align: center;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.path-card:hover {
-  transform: translateY(-8px) scale(1.05);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(212, 175, 55, 0.4);
-}
-
-.path-icon {
-  font-size: 2.2rem;
-  margin-bottom: 8px;
-}
-
-.path-title {
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.path-desc {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-}
-
-.path-enemy {
-  border-color: var(--attack-light);
-}
-
-.path-boss {
-  border-color: var(--gold);
-  background: linear-gradient(160deg, #3a2a10, #1c1408);
-}
-
-.path-chest {
-  border-color: var(--gold);
-}
-
-.path-tavern {
-  border-color: var(--heal-light);
-}
-
-.path-shop {
-  border-color: var(--strategy-light);
-}
-
+/* ---------- shop ---------- */
 .shop-slot {
   display: flex;
   flex-direction: column;

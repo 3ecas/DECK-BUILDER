@@ -11,13 +11,13 @@
   const state = {
     floor: 0,
     turn: 'player', // 'player' | 'enemy'
-    phase: 'intro', // 'intro' | 'path' | 'shop' | 'playing' | 'reward' | 'gameover'
+    phase: 'intro', // 'intro' | 'shop' | 'bonus' | 'playing' | 'reward' | 'gameover'
     log: [],
     events: [], // transient combat-text/shake events consumed by the UI after each render
     enemyReveal: null, // the card the enemy just played this step, shown with a reveal animation
     pendingEcho: null, // candidate card ids waiting on a player choice for the Echo card
     rewardOptions: [],
-    pathOptions: [], // the 3 encounter choices offered between fights
+    bonusResult: null, // { type: 'tavern'|'chest', ... } shown on the "bonus" screen
     shopOffer: [], // { cardId, price, bought } while phase === 'shop'
     player: null,
     enemy: null,
@@ -185,11 +185,12 @@
       turnPlayedCardIds: [],
     };
     log('A new run begins. Descend into the tower.');
-    generatePathChoices();
+    advanceFloor();
   }
 
-  // Starts an actual fight against the given (already-generated) enemy.
-  function startEncounter(enemy) {
+  // Starts an actual fight against a freshly-generated enemy for the next floor.
+  function advanceFloor() {
+    state.floor += 1;
     const p = state.player;
     p.block = 0;
     p.strength = 0;
@@ -204,6 +205,7 @@
     p.hand = [];
     p.discardPile = [];
 
+    const enemy = Enemies.generate(state.floor);
     state.enemy = enemy;
     state.enemyReveal = null;
     state.pendingEcho = null;
@@ -213,86 +215,63 @@
     startPlayerTurn();
   }
 
-  const SIDE_TYPES = ['chest', 'tavern', 'shop'];
+  const REWARD_INTERVAL = 3; // every 3rd non-boss floor guarantees a reward pick
+  const BONUS_ENCOUNTER_CHANCE = 0.25; // otherwise, a rare chance at a tavern/shop/chest
 
-  function rollSideType(exclude) {
-    const options = SIDE_TYPES.filter((t) => t !== exclude);
-    return options[Math.floor(Math.random() * options.length)];
-  }
-
-  function buildPathOption(type, nextFloorNum) {
-    if (type === 'enemy') return { type, enemy: Enemies.generate(nextFloorNum) };
-    return { type };
-  }
-
-  // Builds a fresh set of 3 encounter choices: a battle (always present and
-  // pre-generated so it can be previewed) plus 2 distinct side options drawn
-  // from chest/tavern/shop. Used at run start and after every fight.
-  function generatePathChoices() {
-    const nextFloorNum = state.floor + 1;
-    const sideA = rollSideType(null);
-    const sideB = rollSideType(sideA);
-    const types = shuffle(['enemy', sideA, sideB]);
-    state.pathOptions = types.map((type) => buildPathOption(type, nextFloorNum));
-    state.shopOffer = [];
-    state.phase = 'path';
-  }
-
-  // Chest/Tavern are one-shot: using one replaces just that slot with a new
-  // side option, leaving the other two slots (including the battle) untouched.
-  function replacePathSlot(index) {
-    const otherSide = state.pathOptions.find((o, i) => i !== index && o.type !== 'enemy');
-    const newType = rollSideType(otherSide ? otherSide.type : null);
-    state.pathOptions[index] = buildPathOption(newType, state.floor + 1);
-  }
-
-  function choosePath(index) {
-    if (state.phase !== 'path') return;
-    const opt = state.pathOptions[index];
-    if (!opt) return;
+  // Decides what happens after a normal (non-boss) kill that didn't land on a
+  // guaranteed reward floor: most of the time nothing, just straight into the
+  // next fight; occasionally a standalone tavern/shop/chest interrupts the climb.
+  function triggerPostKillEvent() {
+    if (Math.random() >= BONUS_ENCOUNTER_CHANCE) {
+      advanceFloor();
+      return;
+    }
+    const types = ['tavern', 'chest', 'shop'];
+    const type = types[Math.floor(Math.random() * types.length)];
     const p = state.player;
 
-    if (opt.type === 'enemy') {
-      state.floor += 1;
-      startEncounter(opt.enemy);
-    } else if (opt.type === 'chest') {
-      const cardId = pickRewardCardId();
-      p.masterDeck.push(cardId);
-      log(`You open a chest and find ${Cards.get(cardId).name}!`);
-      replacePathSlot(index);
-    } else if (opt.type === 'tavern') {
+    if (type === 'tavern') {
       const healAmount = Math.round(p.maxHp * 0.4);
       const before = p.hp;
       p.hp = Math.min(p.maxHp, p.hp + healAmount);
-      log(`You rest at the tavern and heal ${p.hp - before} HP.`);
-      replacePathSlot(index);
-    } else if (opt.type === 'shop') {
+      const healed = p.hp - before;
+      log(`You find a tavern and rest, healing ${healed} HP.`);
+      state.bonusResult = { type: 'tavern', healed };
+      state.phase = 'bonus';
+    } else if (type === 'chest') {
+      const cardId = pickRewardCardId();
+      p.masterDeck.push(cardId);
+      log(`You stumble on a chest containing ${Cards.get(cardId).name}!`);
+      state.bonusResult = { type: 'chest', cardId };
+      state.phase = 'bonus';
+    } else {
       enterShop();
     }
   }
 
+  function continueFromBonus() {
+    if (state.phase !== 'bonus') return;
+    state.bonusResult = null;
+    advanceFloor();
+  }
+
   const SHOP_BASE_PRICE = { common: 8, uncommon: 14, rare: 22 };
 
-  // The shop is revisitable: leaving without buying (or buying only some of
-  // the offer) keeps the same offer and prices until you actually fight and
-  // move to a new floor, at which point generatePathChoices() clears it.
   function enterShop() {
-    if (!state.shopOffer || state.shopOffer.length === 0) {
-      const priceMult = 1 + state.floor * 0.15;
-      const usedIds = new Set();
-      const offer = [];
-      let attempts = 0;
-      while (offer.length < 3 && attempts < 50) {
-        attempts += 1;
-        const id = pickRewardCardId();
-        if (usedIds.has(id)) continue;
-        usedIds.add(id);
-        const rarity = Cards.get(id).rarity;
-        const price = Math.round((SHOP_BASE_PRICE[rarity] || 10) * priceMult);
-        offer.push({ cardId: id, price, bought: false });
-      }
-      state.shopOffer = offer;
+    const priceMult = 1 + state.floor * 0.15;
+    const usedIds = new Set();
+    const offer = [];
+    let attempts = 0;
+    while (offer.length < 3 && attempts < 50) {
+      attempts += 1;
+      const id = pickRewardCardId();
+      if (usedIds.has(id)) continue;
+      usedIds.add(id);
+      const rarity = Cards.get(id).rarity;
+      const price = Math.round((SHOP_BASE_PRICE[rarity] || 10) * priceMult);
+      offer.push({ cardId: id, price, bought: false });
     }
+    state.shopOffer = offer;
     state.phase = 'shop';
   }
 
@@ -313,9 +292,8 @@
 
   function leaveShop() {
     if (state.phase !== 'shop') return;
-    // pathOptions (including the shop slot itself) are left untouched, so
-    // the same shop can be revisited later with its remaining offer intact.
-    state.phase = 'path';
+    state.shopOffer = [];
+    advanceFloor();
   }
 
   function drawCards(n) {
@@ -469,8 +447,13 @@
       const bonusGold = randInt(enemy.isBoss ? 8 : 3, enemy.isBoss ? 15 : 6);
       state.player.gold += bonusGold;
       log(`${enemy.name} is defeated! You find ${bonusGold} gold.`);
-      state.phase = 'reward';
-      state.rewardOptions = rollRewards(enemy);
+
+      if (enemy.isBoss || state.floor % REWARD_INTERVAL === 0) {
+        state.phase = 'reward';
+        state.rewardOptions = rollRewards(enemy);
+      } else {
+        triggerPostKillEvent();
+      }
       return true;
     }
     return false;
@@ -544,7 +527,7 @@
         log(`Found ${opt.amount} gold.`);
       }
     }
-    generatePathChoices();
+    advanceFloor();
   }
 
   global.DB = global.DB || {};
@@ -556,7 +539,7 @@
     endPlayerTurn,
     stepEnemyTurn,
     chooseReward,
-    choosePath,
+    continueFromBonus,
     buyCard,
     leaveShop,
   };
