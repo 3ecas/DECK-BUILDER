@@ -17,8 +17,8 @@
     // ---------------- RED (attack + bleed) ----------------
     strike: {
       id: 'strike', name: 'Strike', type: TYPE.ATTACK, color: COLOR.RED, cost: 0, rarity: 'starter',
-      desc: (m = 1) => `Deal ${r(2, m)} damage.`,
-      play(ctx) { ctx.attack(2); },
+      desc: (m = 1) => `Deal ${r(1, m)} damage.`,
+      play(ctx) { ctx.attack(1); },
     },
     quick_jab: {
       id: 'quick_jab', name: 'Quick Jab', type: TYPE.ATTACK, color: COLOR.RED, cost: 0, rarity: 'starter',
@@ -27,8 +27,8 @@
     },
     heavy_slash: {
       id: 'heavy_slash', name: 'Heavy Slash', type: TYPE.ATTACK, color: COLOR.RED, cost: 0, rarity: 'common',
-      desc: (m = 1) => `Deal ${r(3, m)} damage.`,
-      play(ctx) { ctx.attack(3); },
+      desc: (m = 1) => `Deal ${r(2, m)} damage.`,
+      play(ctx) { ctx.attack(2); },
     },
     double_strike: {
       id: 'double_strike', name: 'Double Strike', type: TYPE.ATTACK, color: COLOR.RED, cost: 0, rarity: 'common',
@@ -37,8 +37,8 @@
     },
     fireball: {
       id: 'fireball', name: 'Fireball', type: TYPE.ATTACK, color: COLOR.RED, cost: 0, rarity: 'common',
-      desc: (m = 1) => `Deal ${r(2, m)} damage. Apply 1 Vulnerable.`,
-      play(ctx) { ctx.attack(2); ctx.status('enemy', 'vulnerable', 1); },
+      desc: (m = 1) => `Deal ${r(1, m)} damage. Apply 1 Vulnerable.`,
+      play(ctx) { ctx.attack(1); ctx.status('enemy', 'vulnerable', 1); },
     },
     backstab: {
       id: 'backstab', name: 'Backstab', type: TYPE.ATTACK, color: COLOR.RED, cost: 0, rarity: 'uncommon',
