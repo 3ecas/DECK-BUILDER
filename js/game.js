@@ -19,9 +19,64 @@
     rewardOptions: [],
     bonusResult: null, // { type: 'tavern'|'chest', ... } shown on the "bonus" screen
     shopOffer: [], // { cardId, price, bought } while phase === 'shop'
+    bossesDefeated: 0, // this run, used for the Embers payout on death
+    embersEarned: 0, // shown on the game-over screen after the last run ended
     player: null,
     enemy: null,
   };
+
+  // ---- persistent meta-progression (survives across runs via localStorage) ----
+  const META_KEY = 'hell-tower-meta-v1';
+
+  function loadMeta() {
+    try {
+      const raw = localStorage.getItem(META_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return { embers: parsed.embers || 0, extraCards: parsed.extraCards || {} };
+    } catch (e) {
+      return { embers: 0, extraCards: {} };
+    }
+  }
+
+  const meta = loadMeta();
+
+  function saveMeta() {
+    try {
+      localStorage.setItem(META_KEY, JSON.stringify(meta));
+    } catch (e) {
+      // storage disabled/unavailable (e.g. private browsing) — progress just won't persist
+    }
+  }
+
+  function buildStarterDeck() {
+    const deck = Cards.STARTER_DECK.slice();
+    Object.keys(meta.extraCards).forEach((id) => {
+      for (let i = 0; i < meta.extraCards[id]; i++) deck.push(id);
+    });
+    return deck;
+  }
+
+  const FORGE_BASE_COST = { common: 4, uncommon: 8, rare: 16 };
+
+  function forgeCost(cardId) {
+    const card = Cards.get(cardId);
+    const base = FORGE_BASE_COST[card.rarity] || 6;
+    const owned = meta.extraCards[cardId] || 0;
+    return base * (owned + 1);
+  }
+
+  function forgeBuy(cardId) {
+    const cost = forgeCost(cardId);
+    if (meta.embers < cost) return false;
+    meta.embers -= cost;
+    meta.extraCards[cardId] = (meta.extraCards[cardId] || 0) + 1;
+    saveMeta();
+    return true;
+  }
+
+  function returnToMenu() {
+    state.phase = 'intro';
+  }
 
   function log(msg) {
     state.log.push(msg);
@@ -162,6 +217,8 @@
     state.events = [];
     state.enemyReveal = null;
     state.pendingEcho = null;
+    state.bossesDefeated = 0;
+    state.embersEarned = 0;
     state.player = {
       name: 'You',
       hp: PLAYER_MAX_HP,
@@ -177,7 +234,7 @@
       actionsMax: PLAYER_ACTIONS,
       bonusActionsNext: 0,
       gold: 0,
-      masterDeck: Cards.STARTER_DECK.slice(),
+      masterDeck: buildStarterDeck(),
       drawPile: [],
       hand: [],
       discardPile: [],
@@ -447,6 +504,7 @@
       const bonusGold = randInt(enemy.isBoss ? 8 : 3, enemy.isBoss ? 15 : 6);
       state.player.gold += bonusGold;
       log(`${enemy.name} is defeated! You find ${bonusGold} gold.`);
+      if (enemy.isBoss) state.bossesDefeated += 1;
 
       if (enemy.isBoss || state.floor % REWARD_INTERVAL === 0) {
         state.phase = 'reward';
@@ -463,6 +521,10 @@
     if (state.player.hp <= 0) {
       log('You have fallen. Run over.');
       state.phase = 'gameover';
+      const earned = state.floor + state.bossesDefeated * 3;
+      state.embersEarned = earned;
+      meta.embers += earned;
+      saveMeta();
       return true;
     }
     return false;
@@ -533,6 +595,7 @@
   global.DB = global.DB || {};
   global.DB.Game = {
     state,
+    meta,
     newRun,
     playCard,
     resolveEchoChoice,
@@ -542,5 +605,8 @@
     continueFromBonus,
     buyCard,
     leaveShop,
+    forgeCost,
+    forgeBuy,
+    returnToMenu,
   };
 })(window);

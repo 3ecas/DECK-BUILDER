@@ -12,8 +12,7 @@
   let root;
   let galleryOpen = false;
   let howToOpen = false;
-  let knownHandUids = new Set();
-  let dragState = null; // { el, handIndex, startX, startY, dx, dy, rot, moved, over }
+  let forgeOpen = false;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,6 +32,30 @@
         <div class="hpfill" style="width:${pct}%"></div>
         <span class="hptext">${Math.max(0, actor.hp)} / ${actor.maxHp}</span>
       </div>`;
+  }
+
+  // Small table of the player's active combat conditions (block + status effects).
+  // Name is left-aligned; the icon paired with its value sits on the right.
+  function playerStatsTable(p) {
+    const rows = [];
+    const add = (icon, name, val) => {
+      if (val > 0) rows.push(`<tr><td class="stat-name">${name}</td><td class="stat-val">${icon} ${val}</td></tr>`);
+    };
+    add('🛡️', 'Block', p.block);
+    add('💪', 'Strength', p.strength);
+    add('⬇️', 'Weak', p.weak);
+    add('🎯', 'Vulnerable', p.vulnerable);
+    add('🔱', 'Thorns', p.thorns);
+    add('☠️', 'Poison', p.poison);
+    add('🩸', 'Bleed', p.bleed);
+    const body = rows.length
+      ? rows.join('')
+      : '<tr><td colspan="2" class="stats-empty">None</td></tr>';
+    return `
+      <table class="stats-table">
+        <caption>Your Stats</caption>
+        <tbody>${body}</tbody>
+      </table>`;
   }
 
   function cardHtml(card, mult, extraClass, dataAttrs) {
@@ -70,10 +93,40 @@
       <div class="main-menu">
         <h1>Hell Tower</h1>
         <p class="tagline">A deck-building descent. Attack, defend, and outwit whatever climbs to meet you.</p>
+        <div class="embers-badge">🔥 ${Game.meta.embers} Embers</div>
         <div class="main-menu-actions">
           <button class="btn btn-primary begin-btn">Start</button>
           <button class="btn howto-btn">How to Play</button>
+          <button class="btn open-forge-btn">Forge</button>
           <button class="btn view-cards-btn">Deck Cards</button>
+        </div>
+      </div>`;
+  }
+
+  function renderForge() {
+    const { meta } = Game;
+    const purchasable = Object.values(Cards.LIBRARY).filter((c) => c.rarity !== 'starter');
+    const tilesHtml = purchasable
+      .map((card) => {
+        const owned = meta.extraCards[card.id] || 0;
+        const cost = Game.forgeCost(card.id);
+        const afford = meta.embers >= cost;
+        return `
+          <div class="shop-slot">
+            ${cardHtml(card, 1)}
+            ${owned > 0 ? `<div class="shop-bought">Owned &times;${owned}</div>` : ''}
+            <button class="btn forge-buy-btn" data-forge-id="${card.id}" ${afford ? '' : 'disabled'}>Add 🔥${cost}</button>
+          </div>`;
+      })
+      .join('');
+
+    return `
+      <div class="overlay">
+        <div class="overlay-panel gallery-panel">
+          <h1>Forge</h1>
+          <p class="tagline">🔥 ${meta.embers} Embers &mdash; spend them to permanently add cards to your starting deck.</p>
+          <div class="gallery-grid">${tilesHtml}</div>
+          <button class="btn back-to-menu-btn">Back</button>
         </div>
       </div>`;
   }
@@ -90,7 +143,7 @@
             </section>
             <section class="howto-section">
               <h2>🃏 Hand &amp; Actions</h2>
-              <p>Your hand holds at most 2 cards. Unplayed cards carry over between turns &mdash; you only draw back up to 2. Drag ⚔️ Attack and ✨ Strategy cards onto the enemy to play them; 🛡️ Defense cards can be played right in your hand zone. Some Strategy cards grant extra Actions.</p>
+              <p>Your hand holds at most 2 cards. Unplayed cards carry over between turns &mdash; you only draw back up to 2. Tap a card to play it. Some Strategy cards grant extra Actions.</p>
             </section>
             <section class="howto-section">
               <h2>Conditions</h2>
@@ -155,13 +208,17 @@
   }
 
   function renderGameOver() {
-    const { floor, player } = Game.state;
+    const { floor, player, embersEarned } = Game.state;
     return `
       <div class="overlay">
         <div class="overlay-panel">
           <h1>You Fell</h1>
           <p class="tagline">You reached floor ${floor} with a ${player.masterDeck.length}-card deck and ${player.gold} gold.</p>
-          <button class="btn btn-primary retry-btn">Try Again</button>
+          <p class="tagline">🔥 +${embersEarned} Embers earned &mdash; ${Game.meta.embers} total.</p>
+          <div class="menu-actions">
+            <button class="btn btn-primary retry-btn">Try Again</button>
+            <button class="btn menu-from-gameover-btn">Main Menu</button>
+          </div>
         </div>
       </div>`;
   }
@@ -196,13 +253,10 @@
   function renderBattle() {
     const { player: p, enemy: e, floor, turn, log: logLines, enemyReveal, pendingEcho } = Game.state;
 
-    const seenUids = new Set();
     const handHtml = p.hand
       .map((inst, i) => {
         const card = Cards.get(inst.id);
         const affordable = p.actions >= card.cost ? '' : 'card-disabled';
-        const justDrawn = knownHandUids.has(inst.uid) ? '' : 'card-drawn';
-        seenUids.add(inst.uid);
         const n = p.hand.length;
         const center = (n - 1) / 2;
         const offset = i - center;
@@ -211,12 +265,11 @@
         return cardHtml(
           card,
           1,
-          `hand-card ${affordable} ${justDrawn}`,
+          `hand-card ${affordable}`,
           `data-hand-index="${i}" style="--rot:${rot}deg;--lift:${lift}px;z-index:${i}"`
         );
       })
       .join('');
-    knownHandUids = seenUids;
 
     return `
       <div class="game">
@@ -241,10 +294,6 @@
           </div>
         </div>
 
-        <div class="log-panel">
-          ${logLines.slice(-8).map((l) => `<div class="log-line">${esc(l)}</div>`).join('')}
-        </div>
-
         <div class="hand-area">
           <div class="pile-counts">
             <span title="Draw pile">🂠 ${p.drawPile.length}</span>
@@ -254,17 +303,19 @@
         </div>
 
         <div class="player-status-bar">
-          <div class="player-status-row">
-            ${p.block > 0 ? `<span class="badge badge-block">🛡️ ${p.block}</span>` : ''}
-            ${statusBadges(p)}
-            <span class="energy">⚡ ${p.actions} / ${p.actionsMax} Actions</span>
+          <div class="log-panel">
+            ${logLines.slice(-12).map((l) => `<div class="log-line">${esc(l)}</div>`).join('')}
           </div>
-          <div class="player-hp-row">
+          <div class="player-center">
             <div class="player-hp-wrap">
               <span class="player-hp-name">You</span>
               ${hpBar(p)}
             </div>
+            <span class="energy">⚡ ${p.actions} / ${p.actionsMax}</span>
             <button class="btn end-turn-btn" ${turn !== 'player' || pendingEcho ? 'disabled' : ''}>End Turn</button>
+          </div>
+          <div class="player-conditions">
+            ${playerStatsTable(p)}
           </div>
         </div>
       </div>`;
@@ -365,8 +416,10 @@
     const { phase } = Game.state;
     let html = '';
     if (phase === 'intro') {
-      html = galleryOpen ? renderGallery() : renderIntro();
-      if (howToOpen && !galleryOpen) html += renderHowTo();
+      if (galleryOpen) html = renderGallery();
+      else if (forgeOpen) html = renderForge();
+      else html = renderIntro();
+      if (howToOpen && !galleryOpen && !forgeOpen) html += renderHowTo();
     } else if (phase === 'bonus') {
       html = renderBonus();
     } else if (phase === 'shop') {
@@ -404,152 +457,12 @@
     if (Game.state.turn === 'enemy') runEnemyTurnLoop();
   }
 
-  function commitPlay(handIndex) {
+  function playHand(handIndex) {
     Game.playCard(handIndex);
     render();
     const s = Game.state;
     if (s.phase === 'playing' && s.turn === 'player' && s.player.hand.length === 0) {
       endTurnAndAdvance();
-    }
-  }
-
-  // Defense cards protect the player, so they can be played by dropping them
-  // right back in their own hand zone; attack & strategy cards need to reach
-  // the enemy on the battlefield.
-  function zoneSelectorFor(card) {
-    return card && card.type === 'defense' ? '.hand-area' : '.battlefield';
-  }
-
-  function isOverElement(selector, x, y) {
-    const zone = root.querySelector(selector);
-    if (!zone) return false;
-    const r = zone.getBoundingClientRect();
-    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-  }
-
-  function beginDrag(handCard, handIndex, x, y) {
-    const inst = Game.state.player.hand[handIndex];
-    const card = inst && Cards.get(inst.id);
-    const isDefense = !!card && card.type === 'defense';
-    dragState = {
-      el: handCard,
-      handIndex,
-      startX: x,
-      startY: y,
-      dx: 0,
-      dy: 0,
-      rot: 0,
-      moved: false,
-      over: false,
-      isDefense,
-      zoneSelector: zoneSelectorFor(card),
-    };
-    handCard.style.transition = ''; // clear any leftover snap-back transition so dragging tracks the pointer 1:1
-    handCard.classList.add('dragging');
-  }
-
-  function moveDrag(x, y) {
-    if (!dragState) return;
-    const dx = x - dragState.startX;
-    const dy = y - dragState.startY;
-    if (Math.hypot(dx, dy) > 6) dragState.moved = true;
-    const rot = Math.max(-18, Math.min(18, dx * 0.08));
-    dragState.dx = dx;
-    dragState.dy = dy;
-    dragState.rot = rot;
-    dragState.el.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
-
-    const over = isOverElement(dragState.zoneSelector, x, y);
-    dragState.over = over;
-    dragState.el.classList.toggle(dragState.isDefense ? 'can-drop-defense' : 'can-drop', over);
-    const zone = root.querySelector(dragState.zoneSelector);
-    if (zone) zone.classList.toggle('drag-target-active', over);
-  }
-
-  function snapBack(el) {
-    el.classList.remove('dragging', 'can-drop', 'can-drop-defense');
-    el.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)';
-    el.style.transform = '';
-    let done = false;
-    const finish = (ev) => {
-      if (done || (ev && ev.propertyName !== 'transform')) return;
-      done = true;
-      el.style.transition = '';
-      el.removeEventListener('transitionend', finish);
-    };
-    el.addEventListener('transitionend', finish);
-    setTimeout(finish, 300); // fallback if transitionend never fires (reduced motion, no-op transform, throttled tab)
-  }
-
-  // Defense cards protect the player in place — a quick settle-and-fade.
-  function playDefense(el, dx, dy, handIndex) {
-    el.classList.remove('dragging', 'can-drop-defense');
-    el.style.transition = 'transform 0.16s ease-out, opacity 0.16s ease-out';
-    el.style.transform = `translate(${dx}px, ${dy}px) scale(0.82)`;
-    el.style.opacity = '0';
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      commitPlay(handIndex);
-    };
-    el.addEventListener('transitionend', finish, { once: true });
-    setTimeout(finish, 220); // fallback for prefers-reduced-motion / throttled tabs
-  }
-
-  // Attack & strategy cards wind up (pull back, like drawing a weapon) before
-  // swinging forward through the enemy — momentum before the hit.
-  function playAttack(el, dx, dy, rot, handIndex) {
-    el.classList.remove('dragging', 'can-drop');
-    let done = false;
-    let swung = false;
-    const commit = () => {
-      if (done) return;
-      done = true;
-      commitPlay(handIndex);
-    };
-    const swing = () => {
-      if (swung) return;
-      swung = true;
-      el.style.transition = 'transform 0.13s cubic-bezier(0.55, 0, 1, 1), opacity 0.13s ease-in';
-      el.style.transform = `translate(${dx}px, ${dy - 55}px) rotate(${rot}deg) scale(0.5)`;
-      el.style.opacity = '0';
-      el.addEventListener('transitionend', commit, { once: true });
-      setTimeout(commit, 180);
-    };
-
-    const windupDx = dx * 0.5;
-    const windupDy = dy * 0.5 + 22;
-    const windupRot = rot * -0.8;
-    el.style.transition = 'transform 0.11s ease-out';
-    el.style.transform = `translate(${windupDx}px, ${windupDy}px) rotate(${windupRot}deg) scale(1.08)`;
-    el.addEventListener('transitionend', swing, { once: true });
-    setTimeout(swing, 150); // fallback if the windup transitionend never fires
-  }
-
-  function endDrag() {
-    if (!dragState) return;
-    const { el, handIndex, dx, dy, rot, moved, over, isDefense } = dragState;
-    const zone = root.querySelector(dragState.zoneSelector);
-    if (zone) zone.classList.remove('drag-target-active');
-    dragState = null;
-
-    const inst = Game.state.player.hand[handIndex];
-    const card = inst && Cards.get(inst.id);
-    const canPlay = card
-      && Game.state.phase === 'playing'
-      && Game.state.turn === 'player'
-      && !Game.state.pendingEcho
-      && Game.state.player.actions >= card.cost;
-
-    if (moved && over && canPlay) {
-      if (isDefense) {
-        playDefense(el, dx, dy, handIndex);
-      } else {
-        playAttack(el, dx, dy, rot, handIndex);
-      }
-    } else {
-      snapBack(el);
     }
   }
 
@@ -561,24 +474,8 @@
     }
     root.dataset.uiInitialized = 'true';
 
-    root.addEventListener('pointerdown', (e) => {
-      if (dragState) return;
-      const handCard = e.target.closest('.hand-card');
-      if (!handCard) return;
-      if (Game.state.phase !== 'playing' || Game.state.turn !== 'player' || Game.state.pendingEcho) return;
-      beginDrag(handCard, Number(handCard.dataset.handIndex), e.clientX, e.clientY);
-      e.preventDefault();
-    });
-
-    document.addEventListener('pointermove', (e) => {
-      if (!dragState) return;
-      moveDrag(e.clientX, e.clientY);
-    });
-
-    document.addEventListener('pointerup', () => endDrag());
-    document.addEventListener('pointercancel', () => endDrag());
-
     root.addEventListener('click', (e) => {
+      const handCard = e.target.closest('.hand-card');
       const endTurnBtn = e.target.closest('.end-turn-btn');
       const rewardCard = e.target.closest('.reward-card');
       const skipBtn = e.target.closest('.skip-reward-btn');
@@ -592,6 +489,9 @@
       const shopBuyBtn = e.target.closest('.shop-buy-btn');
       const leaveShopBtn = e.target.closest('.leave-shop-btn');
       const continueBonusBtn = e.target.closest('.continue-bonus-btn');
+      const openForgeBtn = e.target.closest('.open-forge-btn');
+      const forgeBuyBtn = e.target.closest('.forge-buy-btn');
+      const menuFromGameOverBtn = e.target.closest('.menu-from-gameover-btn');
 
       if (continueBonusBtn) {
         Game.continueFromBonus();
@@ -599,13 +499,18 @@
       } else if (shopBuyBtn && !shopBuyBtn.disabled) {
         Game.buyCard(Number(shopBuyBtn.dataset.shopIndex));
         render();
+      } else if (forgeBuyBtn && !forgeBuyBtn.disabled) {
+        Game.forgeBuy(forgeBuyBtn.dataset.forgeId);
+        render();
       } else if (leaveShopBtn) {
         Game.leaveShop();
         render();
       } else if (echoCard) {
         Game.resolveEchoChoice(echoCard.dataset.echoId);
         render();
-      } else if (endTurnBtn && !endTurnBtn.disabled && !dragState) {
+      } else if (handCard) {
+        playHand(Number(handCard.dataset.handIndex));
+      } else if (endTurnBtn && !endTurnBtn.disabled) {
         endTurnAndAdvance();
       } else if (rewardCard) {
         Game.chooseReward(Number(rewardCard.dataset.rewardIndex));
@@ -616,25 +521,37 @@
       } else if (beginBtn) {
         galleryOpen = false;
         howToOpen = false;
+        forgeOpen = false;
         Game.newRun();
         render();
       } else if (retryBtn) {
         galleryOpen = false;
         howToOpen = false;
+        forgeOpen = false;
         Game.newRun();
         render();
       } else if (viewCardsBtn) {
         galleryOpen = true;
         howToOpen = false;
+        forgeOpen = false;
+        render();
+      } else if (openForgeBtn) {
+        forgeOpen = true;
+        galleryOpen = false;
+        howToOpen = false;
         render();
       } else if (backToMenuBtn) {
         galleryOpen = false;
+        forgeOpen = false;
         render();
       } else if (howToBtn) {
         howToOpen = true;
         render();
       } else if (closeHowToBtn) {
         howToOpen = false;
+        render();
+      } else if (menuFromGameOverBtn) {
+        Game.returnToMenu();
         render();
       }
     });
