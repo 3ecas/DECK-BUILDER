@@ -11,6 +11,9 @@
 
   let root;
   let galleryOpen = false;
+  let howToOpen = false;
+  let knownHandUids = new Set();
+  let dragState = null; // { el, handIndex, startX, startY, dx, dy, rot, moved, over }
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -64,27 +67,61 @@
 
   function renderIntro() {
     return `
+      <div class="main-menu">
+        <h1>Hell Tower</h1>
+        <p class="tagline">A deck-building descent. Attack, defend, and outwit whatever climbs to meet you.</p>
+        <div class="main-menu-actions">
+          <button class="btn btn-primary begin-btn">Start</button>
+          <button class="btn howto-btn">How to Play</button>
+          <button class="btn view-cards-btn">Deck Cards</button>
+        </div>
+      </div>`;
+  }
+
+  function renderHowTo() {
+    return `
       <div class="overlay">
-        <div class="overlay-panel">
-          <h1>Hell Tower</h1>
-          <p class="tagline">A deck-building descent. Attack, defend, and outwit whatever climbs to meet you.</p>
-          <ul class="rules">
-            <li><b>⚔️ Attack</b> and <b>🛡️ Defense</b> cards are free to play. <b>✨ Strategy</b> cards cost Actions &mdash; your one limited resource each turn.</li>
-            <li>Your hand holds at most 2 cards, and unplayed cards carry over between turns &mdash; you only draw back up to 2.</li>
-            <li>Some cards combo off each other &mdash; read their text. A few Strategy cards grant extra Actions.</li>
-            <li>Watch for status effects: 🔱 Thorns reflects damage back at attackers, ☠️ Poison and 🩸 Bleed tick down over time.</li>
-            <li>Some cards steal Block or Strength straight from the enemy, cleanse your own bad conditions, or repeat an effect you already played this turn.</li>
-            <li>Cards come in five color archetypes &mdash; <b style="color:#ff6659">red</b> (attack &amp; bleed), <b style="color:#8bc34a">green</b> (poison), <b style="color:#6fa8dc">blue</b> (defense), <b style="color:#e8d16a">yellow</b> (healing), and <b style="color:#c9c9c9">grey</b> (draw, actions, debuffs). Rewards rotate through all five, so keep an eye out for synergies.</li>
-            <li>Click a card in your hand to play it. Hover to see it up close.</li>
-            <li>The climb is continuous &mdash; win a fight and the next enemy appears (plus a little bonus gold on every kill). Every 3rd floor you also get to pick a bigger reward: a new card, HP, or gold.</li>
-            <li>Every 5th enemy is a tougher boss &mdash; beat one for a bigger reward and a shot at one of its own cards.</li>
-            <li>Between some fights you might stumble onto a tavern (free heal), a chest (free card), or a shop (spend gold on cards, pricier at greater depth) &mdash; but not always.</li>
-            <li>Fall, and the run ends.</li>
-          </ul>
-          <div class="menu-actions">
-            <button class="btn btn-primary begin-btn">Begin Descent</button>
-            <button class="btn view-cards-btn">View All Cards</button>
+        <div class="overlay-panel howto-panel">
+          <h1>How to Play</h1>
+          <div class="howto-body">
+            <section class="howto-section">
+              <h2>⚔️ Attack &amp; 🛡️ Defense</h2>
+              <p>Free to play &mdash; no Action cost. <b>✨ Strategy</b> cards cost Actions, your one limited resource each turn.</p>
+            </section>
+            <section class="howto-section">
+              <h2>🃏 Hand &amp; Actions</h2>
+              <p>Your hand holds at most 2 cards. Unplayed cards carry over between turns &mdash; you only draw back up to 2. Drag ⚔️ Attack and ✨ Strategy cards onto the enemy to play them; 🛡️ Defense cards can be played right in your hand zone. Some Strategy cards grant extra Actions.</p>
+            </section>
+            <section class="howto-section">
+              <h2>Conditions</h2>
+              <ul>
+                <li><b>⬇️ Weak</b> &mdash; deals 25% less damage.</li>
+                <li><b>🎯 Vulnerable</b> &mdash; takes 25% more damage.</li>
+                <li><b>💪 Strength</b> &mdash; adds flat bonus damage to attacks.</li>
+                <li><b>🔱 Thorns</b> &mdash; reflects damage back at attackers.</li>
+                <li><b>☠️ Poison</b> &amp; <b>🩸 Bleed</b> &mdash; damage over time, ticks down each turn.</li>
+              </ul>
+            </section>
+            <section class="howto-section">
+              <h2>Card Colors</h2>
+              <ul>
+                <li><b style="color:#ff6659">Red</b> &mdash; attack &amp; bleed</li>
+                <li><b style="color:#8bc34a">Green</b> &mdash; poison</li>
+                <li><b style="color:#6fa8dc">Blue</b> &mdash; defense</li>
+                <li><b style="color:#e8d16a">Yellow</b> &mdash; healing</li>
+                <li><b style="color:#c9c9c9">Grey</b> &mdash; draw, actions, debuffs</li>
+              </ul>
+            </section>
+            <section class="howto-section">
+              <h2>The Climb</h2>
+              <p>Win a fight and the next enemy appears immediately, plus a little bonus gold. Every 3rd floor, pick a bigger reward: a new card, HP, or gold. Every 5th enemy is a tougher boss &mdash; beat one for a bigger reward and a shot at one of its own cards. Between fights you might find a tavern (free heal), a chest (free card), or a shop (spend gold on cards). Fall, and the run ends.</p>
+            </section>
+            <section class="howto-section">
+              <h2>Advanced</h2>
+              <p>Some cards steal Block or Strength straight from the enemy, cleanse your own bad conditions, or Echo &mdash; repeat an effect you already played this turn.</p>
+            </section>
           </div>
+          <button class="btn btn-primary close-howto-btn">Got it</button>
         </div>
       </div>`;
   }
@@ -159,10 +196,13 @@
   function renderBattle() {
     const { player: p, enemy: e, floor, turn, log: logLines, enemyReveal, pendingEcho } = Game.state;
 
+    const seenUids = new Set();
     const handHtml = p.hand
       .map((inst, i) => {
         const card = Cards.get(inst.id);
         const affordable = p.actions >= card.cost ? '' : 'card-disabled';
+        const justDrawn = knownHandUids.has(inst.uid) ? '' : 'card-drawn';
+        seenUids.add(inst.uid);
         const n = p.hand.length;
         const center = (n - 1) / 2;
         const offset = i - center;
@@ -171,11 +211,12 @@
         return cardHtml(
           card,
           1,
-          `hand-card ${affordable}`,
+          `hand-card ${affordable} ${justDrawn}`,
           `data-hand-index="${i}" style="--rot:${rot}deg;--lift:${lift}px;z-index:${i}"`
         );
       })
       .join('');
+    knownHandUids = seenUids;
 
     return `
       <div class="game">
@@ -325,6 +366,7 @@
     let html = '';
     if (phase === 'intro') {
       html = galleryOpen ? renderGallery() : renderIntro();
+      if (howToOpen && !galleryOpen) html += renderHowTo();
     } else if (phase === 'bonus') {
       html = renderBonus();
     } else if (phase === 'shop') {
@@ -362,6 +404,155 @@
     if (Game.state.turn === 'enemy') runEnemyTurnLoop();
   }
 
+  function commitPlay(handIndex) {
+    Game.playCard(handIndex);
+    render();
+    const s = Game.state;
+    if (s.phase === 'playing' && s.turn === 'player' && s.player.hand.length === 0) {
+      endTurnAndAdvance();
+    }
+  }
+
+  // Defense cards protect the player, so they can be played by dropping them
+  // right back in their own hand zone; attack & strategy cards need to reach
+  // the enemy on the battlefield.
+  function zoneSelectorFor(card) {
+    return card && card.type === 'defense' ? '.hand-area' : '.battlefield';
+  }
+
+  function isOverElement(selector, x, y) {
+    const zone = root.querySelector(selector);
+    if (!zone) return false;
+    const r = zone.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  function beginDrag(handCard, handIndex, x, y) {
+    const inst = Game.state.player.hand[handIndex];
+    const card = inst && Cards.get(inst.id);
+    const isDefense = !!card && card.type === 'defense';
+    dragState = {
+      el: handCard,
+      handIndex,
+      startX: x,
+      startY: y,
+      dx: 0,
+      dy: 0,
+      rot: 0,
+      moved: false,
+      over: false,
+      isDefense,
+      zoneSelector: zoneSelectorFor(card),
+    };
+    handCard.style.transition = ''; // clear any leftover snap-back transition so dragging tracks the pointer 1:1
+    handCard.classList.add('dragging');
+  }
+
+  function moveDrag(x, y) {
+    if (!dragState) return;
+    const dx = x - dragState.startX;
+    const dy = y - dragState.startY;
+    if (Math.hypot(dx, dy) > 6) dragState.moved = true;
+    const rot = Math.max(-18, Math.min(18, dx * 0.08));
+    dragState.dx = dx;
+    dragState.dy = dy;
+    dragState.rot = rot;
+    dragState.el.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
+
+    const over = isOverElement(dragState.zoneSelector, x, y);
+    dragState.over = over;
+    dragState.el.classList.toggle(dragState.isDefense ? 'can-drop-defense' : 'can-drop', over);
+    const zone = root.querySelector(dragState.zoneSelector);
+    if (zone) zone.classList.toggle('drag-target-active', over);
+  }
+
+  function snapBack(el) {
+    el.classList.remove('dragging', 'can-drop', 'can-drop-defense');
+    el.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)';
+    el.style.transform = '';
+    let done = false;
+    const finish = (ev) => {
+      if (done || (ev && ev.propertyName !== 'transform')) return;
+      done = true;
+      el.style.transition = '';
+      el.removeEventListener('transitionend', finish);
+    };
+    el.addEventListener('transitionend', finish);
+    setTimeout(finish, 300); // fallback if transitionend never fires (reduced motion, no-op transform, throttled tab)
+  }
+
+  // Defense cards protect the player in place — a quick settle-and-fade.
+  function playDefense(el, dx, dy, handIndex) {
+    el.classList.remove('dragging', 'can-drop-defense');
+    el.style.transition = 'transform 0.16s ease-out, opacity 0.16s ease-out';
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(0.82)`;
+    el.style.opacity = '0';
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      commitPlay(handIndex);
+    };
+    el.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 220); // fallback for prefers-reduced-motion / throttled tabs
+  }
+
+  // Attack & strategy cards wind up (pull back, like drawing a weapon) before
+  // swinging forward through the enemy — momentum before the hit.
+  function playAttack(el, dx, dy, rot, handIndex) {
+    el.classList.remove('dragging', 'can-drop');
+    let done = false;
+    let swung = false;
+    const commit = () => {
+      if (done) return;
+      done = true;
+      commitPlay(handIndex);
+    };
+    const swing = () => {
+      if (swung) return;
+      swung = true;
+      el.style.transition = 'transform 0.13s cubic-bezier(0.55, 0, 1, 1), opacity 0.13s ease-in';
+      el.style.transform = `translate(${dx}px, ${dy - 55}px) rotate(${rot}deg) scale(0.5)`;
+      el.style.opacity = '0';
+      el.addEventListener('transitionend', commit, { once: true });
+      setTimeout(commit, 180);
+    };
+
+    const windupDx = dx * 0.5;
+    const windupDy = dy * 0.5 + 22;
+    const windupRot = rot * -0.8;
+    el.style.transition = 'transform 0.11s ease-out';
+    el.style.transform = `translate(${windupDx}px, ${windupDy}px) rotate(${windupRot}deg) scale(1.08)`;
+    el.addEventListener('transitionend', swing, { once: true });
+    setTimeout(swing, 150); // fallback if the windup transitionend never fires
+  }
+
+  function endDrag() {
+    if (!dragState) return;
+    const { el, handIndex, dx, dy, rot, moved, over, isDefense } = dragState;
+    const zone = root.querySelector(dragState.zoneSelector);
+    if (zone) zone.classList.remove('drag-target-active');
+    dragState = null;
+
+    const inst = Game.state.player.hand[handIndex];
+    const card = inst && Cards.get(inst.id);
+    const canPlay = card
+      && Game.state.phase === 'playing'
+      && Game.state.turn === 'player'
+      && !Game.state.pendingEcho
+      && Game.state.player.actions >= card.cost;
+
+    if (moved && over && canPlay) {
+      if (isDefense) {
+        playDefense(el, dx, dy, handIndex);
+      } else {
+        playAttack(el, dx, dy, rot, handIndex);
+      }
+    } else {
+      snapBack(el);
+    }
+  }
+
   function init() {
     root = document.getElementById('app');
     if (root.dataset.uiInitialized) {
@@ -370,8 +561,24 @@
     }
     root.dataset.uiInitialized = 'true';
 
-    root.addEventListener('click', (e) => {
+    root.addEventListener('pointerdown', (e) => {
+      if (dragState) return;
       const handCard = e.target.closest('.hand-card');
+      if (!handCard) return;
+      if (Game.state.phase !== 'playing' || Game.state.turn !== 'player' || Game.state.pendingEcho) return;
+      beginDrag(handCard, Number(handCard.dataset.handIndex), e.clientX, e.clientY);
+      e.preventDefault();
+    });
+
+    document.addEventListener('pointermove', (e) => {
+      if (!dragState) return;
+      moveDrag(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('pointerup', () => endDrag());
+    document.addEventListener('pointercancel', () => endDrag());
+
+    root.addEventListener('click', (e) => {
       const endTurnBtn = e.target.closest('.end-turn-btn');
       const rewardCard = e.target.closest('.reward-card');
       const skipBtn = e.target.closest('.skip-reward-btn');
@@ -379,6 +586,8 @@
       const retryBtn = e.target.closest('.retry-btn');
       const viewCardsBtn = e.target.closest('.view-cards-btn');
       const backToMenuBtn = e.target.closest('.back-to-menu-btn');
+      const howToBtn = e.target.closest('.howto-btn');
+      const closeHowToBtn = e.target.closest('.close-howto-btn');
       const echoCard = e.target.closest('.echo-choice-card');
       const shopBuyBtn = e.target.closest('.shop-buy-btn');
       const leaveShopBtn = e.target.closest('.leave-shop-btn');
@@ -396,14 +605,7 @@
       } else if (echoCard) {
         Game.resolveEchoChoice(echoCard.dataset.echoId);
         render();
-      } else if (handCard) {
-        Game.playCard(Number(handCard.dataset.handIndex));
-        render();
-        const s = Game.state;
-        if (s.phase === 'playing' && s.turn === 'player' && s.player.hand.length === 0) {
-          endTurnAndAdvance();
-        }
-      } else if (endTurnBtn && !endTurnBtn.disabled) {
+      } else if (endTurnBtn && !endTurnBtn.disabled && !dragState) {
         endTurnAndAdvance();
       } else if (rewardCard) {
         Game.chooseReward(Number(rewardCard.dataset.rewardIndex));
@@ -413,17 +615,26 @@
         render();
       } else if (beginBtn) {
         galleryOpen = false;
+        howToOpen = false;
         Game.newRun();
         render();
       } else if (retryBtn) {
         galleryOpen = false;
+        howToOpen = false;
         Game.newRun();
         render();
       } else if (viewCardsBtn) {
         galleryOpen = true;
+        howToOpen = false;
         render();
       } else if (backToMenuBtn) {
         galleryOpen = false;
+        render();
+      } else if (howToBtn) {
+        howToOpen = true;
+        render();
+      } else if (closeHowToBtn) {
+        howToOpen = false;
         render();
       }
     });

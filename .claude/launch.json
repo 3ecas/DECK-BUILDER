@@ -4,7 +4,7 @@
     {
       "name": "hell-tower-static",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/creartbernardo/Desktop/PROJECTS/DOCUMENTS/DECK BUILDER/serve.js"],
+      "runtimeArgs": ["D:\\TESTING_GAMING\\DECK-BUILDER\\serve.js"],
       "port": 8765
     }
   ]
