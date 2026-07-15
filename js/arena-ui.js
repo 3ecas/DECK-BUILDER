@@ -27,9 +27,14 @@
   /* ---------------- arena shell ---------------- */
 
   function renderShell() {
+    // lines drawn from the engine's own constants so what you see is exactly
+    // what the damage check uses
+    const lines =
+      `<div class="castle-line enemy-line" style="bottom:${Arena.ENEMY_LINE}%"></div>` +
+      `<div class="castle-line player-line" style="bottom:${Arena.PLAYER_LINE}%"></div>`;
     const lanes = Array.from(
       { length: Arena.LANE_COUNT },
-      (_, i) => `<div class="lane" data-lane="${i}"></div>`
+      (_, i) => `<div class="lane" data-lane="${i}">${lines}</div>`
     ).join('');
     return `
       <div class="arena">
@@ -46,7 +51,10 @@
             <span class="wall-hp"></span>
           </div>
 
-          <div class="field">${lanes}</div>
+          <div class="field">
+            ${lanes}
+            <button class="engage-btn">Engage</button>
+          </div>
 
           <div class="wall player-wall">
             <span class="wall-icon">🏰</span>
@@ -60,8 +68,6 @@
 
           <div class="arena-hand"></div>
         </div>
-
-        <button class="engage-btn">Engage</button>
       </div>`;
   }
 
@@ -467,11 +473,21 @@
     return null;
   }
 
+  // Pointer coords are viewport pixels, but the ghost lives inside the scaled
+  // stage and is positioned in the stage's own 1920x1080 space — convert.
+  function toStageCoords(x, y) {
+    const r = root.getBoundingClientRect();
+    const scale = r.width / STAGE_W || 1;
+    return { x: (x - r.left) / scale, y: (y - r.top) / scale };
+  }
+
   function beginDrag(cardEl, x, y) {
     const handIndex = Number(cardEl.dataset.handIndex);
     const ghost = cardEl.cloneNode(true);
     ghost.classList.add('drag-ghost');
-    document.body.appendChild(ghost);
+    // must live inside #app so it inherits the stage scale — on document.body
+    // it would render at full 1920-design size over a scaled-down board
+    root.appendChild(ghost);
     cardEl.classList.add('card-source');
     drag = { handIndex, ghost, cardEl };
     moveDrag(x, y);
@@ -479,9 +495,10 @@
 
   function moveDrag(x, y) {
     if (!drag) return;
-    drag.ghost.style.left = `${x}px`;
-    drag.ghost.style.top = `${y}px`;
-    const hit = laneAt(x, y);
+    const p = toStageCoords(x, y);
+    drag.ghost.style.left = `${p.x}px`;
+    drag.ghost.style.top = `${p.y}px`;
+    const hit = laneAt(x, y); // hit-test stays in viewport space (both sides are)
     root.querySelectorAll('.lane').forEach((l) => l.classList.remove('lane-hot'));
     if (hit && Arena.canAfford(drag.handIndex)) hit.el.classList.add('lane-hot');
   }
@@ -645,6 +662,31 @@
     render();
   }
 
+  /* ---------------- stage scaling ---------------- */
+
+  // The game is laid out at exactly STAGE_W x STAGE_H and scaled to fit the
+  // window, so 1080p / 1440p / 4K all render the identical layout at different
+  // sizes. Uses the smaller axis ratio so nothing is ever cut off; leftover
+  // space on non-16:9 displays becomes letterbox bars.
+  const STAGE_W = 1920;
+  const STAGE_H = 1080;
+
+  function fitStage() {
+    const scale = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
+    document.documentElement.style.setProperty('--stage-scale', scale);
+  }
+
+  function watchStageSize() {
+    fitStage();
+    window.addEventListener('resize', fitStage);
+    // Belt and braces: the viewport can change without firing `resize`
+    // (fullscreen toggles, some DPI/zoom changes), which would leave the stage
+    // scaled for the old size. Observing the root element catches those.
+    if (window.ResizeObserver) {
+      new ResizeObserver(fitStage).observe(document.documentElement);
+    }
+  }
+
   /* ---------------- boot ---------------- */
 
   function renderLoadError(msg) {
@@ -669,6 +711,7 @@
 
   async function boot() {
     root = document.getElementById('app');
+    watchStageSize();
     const url = CFG.cardsUrl || 'cards.csv';
     let text;
     try {

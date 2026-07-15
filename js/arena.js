@@ -13,14 +13,31 @@
   const HAND_SIZE = 4;
   const LANE_COUNT = 3;
   const TRACK_END = 100;
-  const ENGAGE_DIST = 6; // how close two opposing units get before they clash
+  // A lane is 100 track units tall and renders 651px on the 1920x1080 stage, so
+  // the 78px token spans 78/651*100 = 12 units. Everything below derives from
+  // that, so the maths matches the circles actually drawn on screen. If the
+  // lane or token size changes in CSS, re-measure and update this one number.
+  const UNIT_DIAMETER = 12;
+  const UNIT_RADIUS = UNIT_DIAMETER / 2;
+
+  // Each castle has a line a little in front of it. A unit damages that castle
+  // the moment the TIP of its circle crosses the line.
+  const CASTLE_LINE = 11; // distance from a castle to its own line
+  const PLAYER_LINE = CASTLE_LINE; // bottom of the track
+  const ENEMY_LINE = TRACK_END - CASTLE_LINE; // top of the track
+
+  // Units enter just above their own castle's line — circle resting on it, not
+  // crossing it.
+  const SPAWN_POS = PLAYER_LINE + UNIT_RADIUS;
+
+  const ENGAGE_DIST = UNIT_DIAMETER; // circles clash exactly when they touch
   // Every unit moves at this speed — there is no per-card speed.
   const UNIT_SPEED = (global.RTS_CONFIG && global.RTS_CONFIG.unitSpeed) || 4;
   const START_MANA = (global.RTS_CONFIG && global.RTS_CONFIG.startingMana) || 0;
   // Minimum spacing between two friendly units in a lane, so they queue up
-  // single file instead of stacking on the same spot. Must be wide enough that
-  // the tokens don't visually overlap.
-  const MIN_GAP = 13;
+  // single file instead of stacking on the same spot. One diameter + a hair,
+  // so the tokens sit shoulder to shoulder without ever overlapping.
+  const MIN_GAP = UNIT_DIAMETER + 1;
 
   let spawnSeq = 0;
 
@@ -135,7 +152,8 @@
         id: inst.id,
         side: side.key,
         lane: laneIndex,
-        pos: side.key === 'player' ? back : TRACK_END - back,
+        // enter just above your own castle line, mirrored per side
+        pos: side.key === 'player' ? SPAWN_POS + back : TRACK_END - SPAWN_POS - back,
         hp: card.hp,
         maxHp: card.hp,
         returnsCard: i === 0, // exactly one copy owns the card
@@ -249,15 +267,19 @@
     });
   }
 
+  // A castle is hit when the TIP of a unit's circle crosses that castle's line.
+  // Runs AFTER resolveCombat, which is what makes a last-moment defensive
+  // placement work: a blocker that reaches the attacker on the same tick kills
+  // it before this ever sees it.
   function hitStructures() {
     state.lanes.forEach((lane) => {
       // copy: destroy() mutates the lane while we iterate
       lane.slice().forEach((u) => {
-        if (u.side === 'player' && u.pos >= TRACK_END) {
+        if (u.side === 'player' && u.pos + UNIT_RADIUS >= ENEMY_LINE) {
           state.enemy.structureHp -= 1;
           log(`${Units.get(u.id).name} smashes the enemy wall!`);
           destroy(u);
-        } else if (u.side === 'enemy' && u.pos <= 0) {
+        } else if (u.side === 'enemy' && u.pos - UNIT_RADIUS <= PLAYER_LINE) {
           state.player.structureHp -= 1;
           log(`${Units.get(u.id).name} smashes your wall!`);
           destroy(u);
@@ -333,5 +355,10 @@
     TRACK_END,
     UNIT_SPEED,
     MIN_GAP,
+    ENGAGE_DIST,
+    UNIT_RADIUS,
+    PLAYER_LINE,
+    ENEMY_LINE,
+    SPAWN_POS,
   };
 })(window);
