@@ -1,0 +1,19 @@
+﻿id,name,emoji,mana,hp,color,rarity,modifiers,starter
+quick_jab,Quick Jab,🗡️,1,2,red,normal,,yes
+imp,Imp,👹,1,3,red,normal,,yes
+rats,Rats,🐀,2,2,grey,normal,swarm 3,
+shade,Shade,👻,2,3,grey,normal,,yes
+strike,Strike,⚔️,2,4,red,normal,,yes
+backstab,Backstab,🥷,3,4,grey,rare,bonus_vs red 2,yes
+venom_fang,Venom Fang,🐍,3,5,green,normal,,yes
+guard,Guard,🛡️,3,7,blue,normal,,yes
+wolf_pack,Wolf Pack,🐺,4,3,grey,rare,swarm 2,
+fireball,Fireball,🔥,4,6,red,rare,bonus_vs green 2,yes
+heavy_slash,Heavy Slash,🪓,4,8,red,normal,,yes
+mender,Mender,✨,4,7,yellow,normal,,
+warlock,Warlock,🔮,5,9,green,rare,,
+iron_wall,Iron Wall,🧱,5,13,blue,rare,,yes
+brute,Brute,🐻,6,12,red,special,,
+executioner,Executioner,💀,6,11,grey,special,bonus_vs blue 3,
+rampage,Rampage,🐗,7,15,red,special,,
+juggernaut,Juggernaut,🗿,8,20,blue,ultimate,,

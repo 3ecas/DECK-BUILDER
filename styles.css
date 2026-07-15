@@ -775,16 +775,18 @@ body {
 }
 
 .gallery-panel {
-  max-width: 900px;
+  max-width: 1040px;
 }
 
+/* Always 5 across. The cards are fluid (see .coll-slot) so they grow to fill
+   whatever width the panel has rather than sitting at a fixed size. */
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 26px 18px;
-  max-height: 55vh;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 20px 12px;
+  max-height: 64vh;
   overflow-y: auto;
-  padding: 14px 8px 24px;
+  padding: 14px 6px 24px;
   margin-bottom: 20px;
 }
 
@@ -835,6 +837,666 @@ body {
   transform: scale(1.22) rotate(4deg);
 }
 
+/* ==================== lane battler (arena) ==================== */
+.arena {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 8px;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.arena-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---- left tab strip ---- */
+.side-tabs {
+  flex: 0 0 54px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 2px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--gold);
+}
+
+.tab-ico {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.tab-lbl {
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text-dim);
+}
+
+.coin-tab {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 2px;
+  border-radius: 10px;
+  background: rgba(212, 175, 55, 0.12);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+}
+
+.coin-val {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+/* ---- engage button ---- */
+.engage-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 3px solid var(--attack-light);
+  background: radial-gradient(circle at 30% 30%, #e04030, #8a1c1c);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 0 22px rgba(230, 72, 60, 0.45);
+  transition: scale 0.12s ease;
+}
+
+.engage-btn:hover {
+  scale: 1.07;
+}
+
+.engage-btn:active {
+  scale: 0.94;
+}
+
+.engage-btn.hidden {
+  display: none;
+}
+
+/* ---- walls ---- */
+.wall {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 6px 12px;
+}
+
+.enemy-wall {
+  border-color: rgba(230, 72, 60, 0.5);
+}
+
+.player-wall {
+  border-color: rgba(111, 168, 220, 0.5);
+}
+
+.wall-icon {
+  font-size: 1.3rem;
+}
+
+.wall-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.wall-hp {
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+}
+
+/* ---- lanes ---- */
+.field {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  min-height: 240px;
+}
+
+.lane {
+  position: relative;
+  flex: 0 0 72px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background-image: repeating-linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0.035) 0 2px,
+    transparent 2px 26px
+  );
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.lane-hot {
+  box-shadow: inset 0 0 0 2px var(--gold), 0 0 18px rgba(212, 175, 55, 0.35);
+  background-color: rgba(212, 175, 55, 0.12);
+}
+
+/* ---- units on the field ---- */
+.unit-token {
+  position: absolute;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  margin-bottom: -28px; /* centre the token on its track position */
+  border-radius: 50%;
+  /* colour comes from the .card-color-* class; don't set border-color here
+     or this later rule would win over it */
+  border-width: 3px;
+  border-style: solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.unit-token.side-player {
+  box-shadow: 0 0 0 2px rgba(111, 168, 220, 0.9), 0 3px 8px rgba(0, 0, 0, 0.6);
+}
+
+.unit-token.side-enemy {
+  box-shadow: 0 0 0 2px rgba(230, 72, 60, 0.9), 0 3px 8px rgba(0, 0, 0, 0.6);
+}
+
+.tok-emoji {
+  font-size: 1.5rem;
+}
+
+.tok-hp {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+.clash-flash {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: #ffd166;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+  animation: clash-rise 0.7s ease-out forwards;
+  z-index: 5;
+}
+
+@keyframes clash-rise {
+  0% { opacity: 0; margin-bottom: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0; margin-bottom: 34px; }
+}
+
+/* ---- mana ---- */
+.mana-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.mana-bar {
+  flex: 1;
+  height: 14px;
+  background: #241033;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.mana-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4c1d95, #a78bfa);
+}
+
+.mana-text {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+/* ---- hand ---- */
+.arena-hand {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 112px;
+  flex-shrink: 0;
+}
+
+.unit-card {
+  position: relative;
+  width: 78px;
+  height: 106px;
+  border-radius: 8px;
+  /* colour comes from the .card-color-* class (see .unit-token note) */
+  border-width: 2px;
+  border-style: solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+}
+
+.unit-card.unaffordable {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+  cursor: not-allowed;
+}
+
+.mana-orb {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #6d28d9;
+  border: 2px solid #c4b5fd;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.unit-emoji {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.unit-name {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.unit-hp {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+}
+
+.card-source {
+  opacity: 0.3;
+}
+
+.drag-ghost {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 500;
+  opacity: 0.92;
+  margin: 0;
+}
+
+/* ---- modifiers on the card face ---- */
+.unit-mod {
+  font-size: 0.5rem;
+  color: var(--gold);
+  text-align: center;
+  line-height: 1.1;
+  padding: 0 2px;
+}
+
+/* ---- collection / deck builder ---- */
+.coll-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  container-type: inline-size; /* lets the card's text scale with the card */
+}
+
+/* Fluid card: fills its grid column instead of a fixed 78px, so 5-across gets
+   bigger on a wide screen and still fits a narrow one. */
+.coll-slot .unit-card {
+  cursor: pointer;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  padding: 6%;
+  gap: 1%;
+}
+
+/* cqw = 1% of the card's own width, so everything scales together */
+.coll-slot .unit-emoji {
+  font-size: 34cqw;
+}
+
+.coll-slot .unit-name {
+  font-size: 9.5cqw;
+  line-height: 1.15;
+}
+
+.coll-slot .unit-hp {
+  font-size: 9cqw;
+}
+
+.coll-slot .unit-mod {
+  font-size: 8cqw;
+}
+
+.coll-slot .mana-orb {
+  width: 26cqw;
+  height: 26cqw;
+  min-width: 18px;
+  min-height: 18px;
+  font-size: 12cqw;
+  top: -4%;
+  left: -4%;
+}
+
+.coll-slot .deck-badge {
+  width: 26cqw;
+  height: 26cqw;
+  min-width: 18px;
+  min-height: 18px;
+  font-size: 12cqw;
+  top: -4%;
+  right: -4%;
+  padding: 0;
+}
+
+.coll-meta {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.unit-card.in-deck {
+  box-shadow: 0 0 0 2px var(--gold), 0 3px 10px rgba(0, 0, 0, 0.6);
+}
+
+.deck-badge,
+.new-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #2a1a00;
+  font-weight: 800;
+  font-size: 0.62rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.new-badge {
+  background: #4caf50;
+  color: #fff;
+  font-size: 0.5rem;
+}
+
+.deck-ok {
+  color: #8bc34a;
+}
+
+.deck-bad {
+  color: var(--attack-light);
+}
+
+/* ---- pack opening ---- */
+.pack-closed-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 6px 0 24px;
+}
+
+.pack-closed {
+  font-size: 4.6rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  padding: 10px 18px;
+  cursor: pointer;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.6));
+  /* transform drives the idle bob, so hover/press use `scale` instead —
+     otherwise the running animation would win and swallow them */
+  animation: pack-bob 1.5s ease-in-out infinite;
+  transition: scale 0.12s ease;
+}
+
+.pack-closed:hover {
+  scale: 1.12;
+}
+
+.pack-closed:active {
+  scale: 0.94;
+}
+
+@keyframes pack-bob {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-9px) rotate(3deg); }
+}
+
+.pack-cards {
+  gap: 10px;
+}
+
+.pack-card {
+  cursor: default;
+  animation: pack-reveal 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 0.12s);
+}
+
+@keyframes pack-reveal {
+  from { opacity: 0; transform: translateY(26px) scale(0.6) rotate(-10deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pack-closed,
+  .pack-card {
+    animation: none;
+  }
+}
+
+/* ---- rarity ---- */
+.rar-normal { color: var(--grey-light); }
+.rar-rare { color: #6fa8dc; }
+.rar-special { color: #b57edc; }
+.rar-ultimate { color: var(--gold); }
+
+.rar-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 8px;
+}
+
+/* ---- decks popup ---- */
+.deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.deck-row {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.deck-row:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.deck-active {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
+}
+
+.deck-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.deck-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.deck-size {
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+/* deck strip: weakest on the left, strongest on the right */
+.deck-strip {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mini-card {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border-width: 1px;
+  border-style: solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+
+.deck-empty {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ---- deck editor ---- */
+.deck-slots {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.slot {
+  width: 38px;
+  height: 46px;
+  border-radius: 7px;
+  border-width: 2px;
+  border-style: solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+.slot-empty {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.25);
+  cursor: default;
+}
+
+.unit-card.all-used {
+  opacity: 0.5;
+}
+
+/* ---- collection ---- */
+.unit-card.undiscovered {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #0d0808;
+  opacity: 0.55;
+  cursor: default;
+}
+
+.unit-card.undiscovered .unit-emoji {
+  filter: grayscale(1) brightness(0.5);
+}
+
+/* ---- shop ---- */
+.spin-idle {
+  font-size: 3.4rem;
+  margin: 6px 0 14px;
+}
+
+.spin-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.odds-table {
+  margin: 0 auto 18px;
+  width: 180px;
+}
+
 @media (max-width: 640px) {
   .battlefield {
     flex-direction: column;
@@ -871,7 +1533,17 @@ body {
     font-size: 1.9rem;
   }
   .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-    gap: 20px 12px;
+    gap: 14px 6px;
+    padding: 12px 2px 20px;
+  }
+}
+
+/* 5-across only fits while there's room for it. On a phone five 58px cards
+   render their names at ~5px, so drop to 3 — which still makes each card
+   bigger than the old fixed 78px tile. */
+@media (max-width: 560px) {
+  .gallery-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 8px;
   }
 }
