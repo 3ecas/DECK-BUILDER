@@ -7,6 +7,11 @@
   const Collection = global.RTS.Collection;
   const CFG = global.RTS_CONFIG;
 
+  // Token geometry, in the stage's design pixels — must match .unit-token in CSS.
+  const TOKEN_SIZE = 52;
+  const TOKEN_HALF = TOKEN_SIZE / 2;
+  const ENGAGE_OFFSET = 28; // how far each engaged unit slides off-centre (L/R)
+
   let root;
   let shellUp = false; // is the arena shell mounted?
   let rafId = null;
@@ -19,6 +24,7 @@
   let packState = null; // null | 'closed' | 'open'
   let editingDeck = null; // deck object being edited
   let lastSpin = null; // result of the most recent roulette spin
+  let currentHubTab = 'decks'; // which tab is showing inside the DECK hub popup
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -38,17 +44,13 @@
     ).join('');
     return `
       <div class="arena">
-        <nav class="side-tabs">
-          <button class="tab-btn" data-tab="decks"><span class="tab-ico">🃏</span><span class="tab-lbl">Decks</span></button>
-          <button class="tab-btn" data-tab="shop"><span class="tab-ico">🛒</span><span class="tab-lbl">Shop</span></button>
-          <button class="tab-btn" data-tab="collection"><span class="tab-ico">📖</span><span class="tab-lbl">Cards</span></button>
-          <div class="coin-tab"><span class="tab-ico">🪙</span><span class="coin-val"></span></div>
-        </nav>
-
         <div class="arena-main">
-          <div class="wall enemy-wall">
-            <span class="wall-icon">🏰</span>
-            <span class="wall-hp"></span>
+          <div class="top-row">
+            <div class="wall enemy-wall">
+              <span class="wall-icon">🏰</span>
+              <span class="wall-hp"></span>
+            </div>
+            <div class="match-timer"></div>
           </div>
 
           <div class="field">
@@ -56,14 +58,21 @@
             <button class="engage-btn">Engage</button>
           </div>
 
-          <div class="wall player-wall">
-            <span class="wall-icon">🏰</span>
-            <span class="wall-hp"></span>
+          <div class="bottom-row">
+            <button class="deck-btn"><span class="deck-btn-ico">🃏</span><span class="deck-btn-lbl">DECK</span></button>
+            <div class="wall player-wall">
+              <span class="wall-icon">🏰</span>
+              <span class="wall-hp"></span>
+            </div>
+            <div class="coin-tab"><span class="tab-ico">🪙</span><span class="coin-val"></span></div>
           </div>
 
           <div class="mana-row">
-            <div class="mana-bar"><div class="mana-fill"></div></div>
-            <span class="mana-text"></span>
+            <div class="mana-bar">
+              <div class="mana-fill"></div>
+              <div class="mana-ticks">${'<span class="mana-cell"></span>'.repeat(Arena.MANA_MAX)}</div>
+              <span class="mana-text"></span>
+            </div>
           </div>
 
           <div class="arena-hand"></div>
@@ -122,6 +131,11 @@
           unitEls.set(u.fieldId, el);
         }
         el.style.bottom = `${u.pos}%`;
+        // When locked in a side-by-side clash, the player unit slides left and
+        // the enemy right so both sit on the same line facing each other.
+        const off = u.engaged ? (u.side === 'player' ? -ENGAGE_OFFSET : ENGAGE_OFFSET) : 0;
+        el.style.marginLeft = `${TOKEN_HALF * -1 + off}px`;
+        el.classList.toggle('engaged', !!u.engaged);
         const hpEl = el.querySelector('.tok-hp');
         if (hpEl.textContent !== String(u.hp)) hpEl.textContent = u.hp;
       });
@@ -166,6 +180,15 @@
 
     const coin = root.querySelector('.coin-val');
     if (coin) coin.textContent = Collection.data.currency;
+
+    const timer = root.querySelector('.match-timer');
+    if (timer) {
+      const t = playing ? s.matchTime : Arena.MATCH_DURATION;
+      const mm = Math.floor(t / 60);
+      const ss = Math.floor(t % 60);
+      timer.textContent = `${mm}:${String(ss).padStart(2, '0')}`;
+      timer.classList.toggle('timer-final', playing && s.finalStretch);
+    }
 
     const engage = root.querySelector('.engage-btn');
     if (engage) engage.classList.toggle('hidden', s.phase === 'playing');
@@ -224,7 +247,8 @@
       .join('');
   }
 
-  function renderDecksPopup() {
+  function renderDecksBody() {
+    const canDelete = Collection.data.decks.length > 1;
     const rows = Collection.data.decks
       .map((d, i) => {
         const active = i === Collection.data.activeDeck;
@@ -234,23 +258,18 @@
             <div class="deck-row-head">
               <span class="deck-name">${esc(d.name)}</span>
               <span class="deck-size ${legal ? 'deck-ok' : 'deck-bad'}">${d.cards.length}/${Collection.DECK_SIZE}</span>
+              <button class="delete-deck-btn" data-delete-index="${i}" title="Delete deck" ${canDelete ? '' : 'disabled'}>🗑️</button>
             </div>
             <div class="deck-strip">${deckStrip(d)}</div>
           </div>`;
       })
       .join('');
     return `
-      <div class="overlay">
-        <div class="overlay-panel">
-          <h1>Decks</h1>
-          <p class="tagline">Pick the deck you'll fight with.</p>
-          <div class="deck-list">${rows}</div>
-          <div class="menu-actions">
-            <button class="btn newdeck-btn">New Deck</button>
-            <button class="btn editdeck-btn">Edit Deck</button>
-            <button class="btn btn-primary exitdecks-btn">Exit</button>
-          </div>
-        </div>
+      <p class="tagline">Pick the deck you'll fight with.</p>
+      <div class="deck-list">${rows}</div>
+      <div class="menu-actions">
+        <button class="btn newdeck-btn">New Deck</button>
+        <button class="btn editdeck-btn">Edit Deck</button>
       </div>`;
   }
 
@@ -271,15 +290,13 @@
         const owned = Collection.ownedCount(id);
         const spent = inDeck >= owned;
         return `
-          <div class="coll-slot">
-            <div class="unit-card card-color-${c.color} ${inDeck ? 'in-deck' : ''} ${spent ? 'all-used' : ''}" data-pool-id="${id}">
-              <div class="mana-orb">${c.mana}</div>
-              ${inDeck ? `<div class="deck-badge">${inDeck}</div>` : ''}
-              <div class="unit-emoji">${c.emoji}</div>
-              <div class="unit-name">${esc(c.name)}</div>
-              <div class="unit-hp">❤️ ${c.hp}</div>
-            </div>
-            <div class="coll-meta">${inDeck}/${owned}</div>
+          <div class="unit-card mini-unit-card card-color-${c.color} ${inDeck ? 'in-deck' : ''} ${spent ? 'all-used' : ''}" data-pool-id="${id}">
+            <div class="mana-orb">${c.mana}</div>
+            ${inDeck ? `<div class="deck-badge">${inDeck}</div>` : ''}
+            <div class="unit-emoji">${c.emoji}</div>
+            <div class="unit-name">${esc(c.name)}</div>
+            <div class="unit-hp">❤️ ${c.hp}</div>
+            <div class="mini-owned">${inDeck}/${owned}</div>
           </div>`;
       })
       .join('');
@@ -287,14 +304,14 @@
     const legal = Collection.deckIsLegal(deck);
     return `
       <div class="overlay">
-        <div class="overlay-panel gallery-panel">
+        <div class="overlay-panel editor-panel">
           <h1>Edit ${esc(deck.name)}</h1>
           <div class="deck-slots">${slots}</div>
           <p class="tagline">
             <b class="${legal ? 'deck-ok' : 'deck-bad'}">${deck.cards.length}/${Collection.DECK_SIZE}</b>
             &mdash; tap a slot to remove, tap a card below to add.
           </p>
-          <div class="gallery-grid">${pool}</div>
+          <div class="pool-grid">${pool}</div>
           <div class="menu-actions">
             <button class="btn autofill-btn">Auto-fill</button>
             <button class="btn cleardeck-btn">Clear</button>
@@ -304,7 +321,7 @@
       </div>`;
   }
 
-  function renderShop() {
+  function renderShopBody() {
     const canSpin = Collection.canSpin();
     const oddsRows = ['normal', 'rare', 'special', 'ultimate']
       .map((r) => `<tr><td class="stat-name rar-${r}">${r}</td><td class="stat-val">${CFG.odds[r] || 0}%</td></tr>`)
@@ -327,21 +344,15 @@
       : '<div class="spin-idle">🎰</div>';
 
     return `
-      <div class="overlay">
-        <div class="overlay-panel">
-          <h1>Shop</h1>
-          <p class="tagline">🪙 ${Collection.data.currency} coins &middot; ${CFG.spinCost} per spin &middot; +${CFG.currencyPerWin} per win</p>
-          ${result}
-          <table class="stats-table odds-table"><caption>Odds</caption><tbody>${oddsRows}</tbody></table>
-          <div class="menu-actions">
-            <button class="btn btn-primary spin-btn" ${canSpin ? '' : 'disabled'}>Spin 🪙${CFG.spinCost}</button>
-            <button class="btn closepop-btn">Exit</button>
-          </div>
-        </div>
+      <p class="tagline">🪙 ${Collection.data.currency} coins &middot; ${CFG.spinCost} per spin &middot; +${CFG.currencyPerWin} per win</p>
+      ${result}
+      <table class="stats-table odds-table"><caption>Odds</caption><tbody>${oddsRows}</tbody></table>
+      <div class="menu-actions">
+        <button class="btn btn-primary spin-btn" ${canSpin ? '' : 'disabled'}>Spin 🪙${CFG.spinCost}</button>
       </div>`;
   }
 
-  function renderCollection() {
+  function renderCollectionBody() {
     // Every card in the game — undiscovered ones stay blacked out.
     const tiles = Units.ALL_IDS.slice()
       .sort(Units.byHp)
@@ -369,11 +380,31 @@
       .join('');
     const seen = Units.ALL_IDS.filter((id) => Collection.hasSeen(id)).length;
     return `
+      <p class="tagline">${seen} / ${Units.ALL_IDS.length} discovered</p>
+      <div class="gallery-grid">${tiles}</div>`;
+  }
+
+  const HUB_TABS = [
+    { key: 'decks', ico: '🃏', label: 'Decks' },
+    { key: 'shop', ico: '🛒', label: 'Shop' },
+    { key: 'collection', ico: '📖', label: 'Collection' },
+  ];
+
+  function renderDeckHub(tab) {
+    const active = tab || 'decks';
+    const tabsHtml = HUB_TABS.map(
+      (t) => `<button class="hub-tab ${t.key === active ? 'hub-tab-active' : ''}" data-hub-tab="${t.key}">${t.ico} ${t.label}</button>`
+    ).join('');
+    const body =
+      active === 'shop' ? renderShopBody() : active === 'collection' ? renderCollectionBody() : renderDecksBody();
+    // Collection needs the full width for its big grid; Decks and Shop are
+    // tidier in a narrower panel.
+    const widthClass = active === 'collection' ? 'hub-wide' : 'hub-narrow';
+    return `
       <div class="overlay">
-        <div class="overlay-panel gallery-panel">
-          <h1>Collection</h1>
-          <p class="tagline">${seen} / ${Units.ALL_IDS.length} discovered</p>
-          <div class="gallery-grid">${tiles}</div>
+        <div class="overlay-panel hub-panel ${widthClass}">
+          <div class="hub-tabs">${tabsHtml}</div>
+          ${body}
           <button class="btn btn-primary closepop-btn">Exit</button>
         </div>
       </div>`;
@@ -585,20 +616,22 @@
     });
 
     root.addEventListener('click', (e) => {
-      const tab = e.target.closest('.tab-btn');
+      const hubTab = e.target.closest('.hub-tab');
+      const deleteBtn = e.target.closest('.delete-deck-btn');
       const deckRow = e.target.closest('[data-deck-index]');
       const slot = e.target.closest('[data-slot-id]');
       const poolCard = e.target.closest('[data-pool-id]');
 
       if (e.target.closest('.engage-btn') || e.target.closest('.againbtn')) {
         engage();
-      } else if (tab) {
-        const which = tab.dataset.tab;
-        if (which === 'decks') showPopup(renderDecksPopup());
-        else if (which === 'shop') {
-          lastSpin = null;
-          showPopup(renderShop());
-        } else if (which === 'collection') showPopup(renderCollection());
+      } else if (e.target.closest('.deck-btn')) {
+        currentHubTab = 'decks';
+        lastSpin = null;
+        showPopup(renderDeckHub(currentHubTab));
+      } else if (hubTab) {
+        currentHubTab = hubTab.dataset.hubTab;
+        if (currentHubTab === 'shop') lastSpin = null;
+        showPopup(renderDeckHub(currentHubTab));
       } else if (e.target.closest('.closepop-btn')) {
         closePopup();
         if (Arena.state.phase === 'gameover') {
@@ -618,18 +651,20 @@
       } else if (e.target.closest('.packdeck-btn')) {
         pendingPack = null;
         packState = null;
-        showPopup(renderDecksPopup());
+        currentHubTab = 'decks';
+        showPopup(renderDeckHub(currentHubTab));
+      } else if (deleteBtn) {
+        if (!deleteBtn.disabled) Collection.deleteDeck(Number(deleteBtn.dataset.deleteIndex));
+        showPopup(renderDeckHub('decks'));
       } else if (e.target.closest('.newdeck-btn')) {
         Collection.newDeck();
-        showPopup(renderDecksPopup());
+        showPopup(renderDeckHub('decks'));
       } else if (e.target.closest('.editdeck-btn')) {
         editingDeck = Collection.activeDeck();
         showPopup(renderDeckEditor());
-      } else if (e.target.closest('.exitdecks-btn')) {
-        closePopup();
       } else if (e.target.closest('.deckok-btn')) {
         editingDeck = null;
-        showPopup(renderDecksPopup());
+        showPopup(renderDeckHub('decks'));
       } else if (e.target.closest('.autofill-btn')) {
         Collection.autoFillDeck(editingDeck);
         showPopup(renderDeckEditor());
@@ -640,7 +675,7 @@
         const res = Collection.spin();
         if (res) {
           lastSpin = res;
-          showPopup(renderShop());
+          showPopup(renderDeckHub('shop'));
         }
       } else if (slot) {
         Collection.removeFromDeck(editingDeck, slot.dataset.slotId);
@@ -653,7 +688,7 @@
         }
       } else if (deckRow) {
         Collection.selectDeck(Number(deckRow.dataset.deckIndex));
-        showPopup(renderDecksPopup());
+        showPopup(renderDeckHub('decks'));
       } else if (e.target.closest('.howto-btn')) {
         showPopup(renderHowTo());
       }

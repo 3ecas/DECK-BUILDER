@@ -12,27 +12,33 @@
   const STRUCTURE_HP = 2; // two hits and you're out
   const HAND_SIZE = 4;
   const LANE_COUNT = 3;
+  const MATCH_DURATION = 120; // 2:00 total. Last 60s, played cards stop recycling.
+  const FINAL_STRETCH = 60;
   const TRACK_END = 100;
-  // A lane is 100 track units tall and renders 651px on the 1920x1080 stage, so
-  // the 78px token spans 78/651*100 = 12 units. Everything below derives from
-  // that, so the maths matches the circles actually drawn on screen. If the
-  // lane or token size changes in CSS, re-measure and update this one number.
-  const UNIT_DIAMETER = 12;
+  // A lane is 100 track units tall and renders 772px on the 1920x1080 stage, so
+  // the 52px token spans 52/772*100 ≈ 6.7 units. Everything below derives from
+  // that, so the maths matches the circles actually drawn on screen. If the lane
+  // or token size changes in CSS, re-measure and update this one number.
+  const UNIT_DIAMETER = 6.7;
   const UNIT_RADIUS = UNIT_DIAMETER / 2;
 
   // Each castle has a line a little in front of it. A unit damages that castle
-  // the moment the TIP of its circle crosses the line.
-  const CASTLE_LINE = 11; // distance from a castle to its own line
+  // the moment its CENTRE crosses the line.
+  const CASTLE_LINE = 8; // distance from a castle to its own line
   const PLAYER_LINE = CASTLE_LINE; // bottom of the track
   const ENEMY_LINE = TRACK_END - CASTLE_LINE; // top of the track
 
-  // Units enter just above their own castle's line — circle resting on it, not
-  // crossing it.
-  const SPAWN_POS = PLAYER_LINE + UNIT_RADIUS;
+  // Units spawn right at the very edge of the lane (0 / 100) and are revealed as
+  // they walk in — the lane's overflow:hidden acts as a reveal mask.
+  const SPAWN_POS = 0;
 
-  const ENGAGE_DIST = UNIT_DIAMETER; // circles clash exactly when they touch
-  // Every unit moves at this speed — there is no per-card speed.
-  const UNIT_SPEED = (global.RTS_CONFIG && global.RTS_CONFIG.unitSpeed) || 4;
+  // Opposing units walk straight at each other and lock together a little before
+  // their circles fully overlap, then slide side by side (Naruto-card style).
+  const ENGAGE_DIST = 5;
+  const ENGAGE_TIME = 0.35; // seconds locked side by side before the clash resolves
+  // Every unit moves at this speed — there is no per-card speed. This is the
+  // 100% baseline; future modifiers scale off it.
+  const UNIT_SPEED = (global.RTS_CONFIG && global.RTS_CONFIG.unitSpeed) || 3.2;
   const START_MANA = (global.RTS_CONFIG && global.RTS_CONFIG.startingMana) || 0;
   // Minimum spacing between two friendly units in a lane, so they queue up
   // single file instead of stacking on the same spot. One diameter + a hair,
@@ -52,6 +58,8 @@
     lanes: makeLanes(),
     winner: null,
     enemyTimer: 0,
+    matchTime: MATCH_DURATION, // counts down; UI shows this as mm:ss
+    finalStretch: false, // true once matchTime <= FINAL_STRETCH
     log: [],
     flashes: [], // { lane, pos, text } consumed by the UI each frame
   };
@@ -100,6 +108,8 @@
     state.lanes = makeLanes();
     state.winner = null;
     state.enemyTimer = 2;
+    state.matchTime = MATCH_DURATION;
+    state.finalStretch = false;
     state.log = [];
     state.flashes = [];
     drawUp(state.player);
@@ -115,13 +125,14 @@
   // Destroyed units send their card back to the OWNER'S DECK (never the hand),
   // so it re-enters the cycle and can be drawn again later. A `swarm` card
   // spawns several units from ONE card, so only the copy flagged returnsCard
-  // puts it back — otherwise the deck would breed extra copies.
+  // puts it back — otherwise the deck would breed extra copies. A unit played
+  // during the final stretch is singleUse: it's gone for good once destroyed.
   function destroy(unit) {
     const lane = state.lanes[unit.lane];
     const idx = lane.indexOf(unit);
     if (idx >= 0) lane.splice(idx, 1);
     const side = sideOf(unit);
-    if (unit.returnsCard) {
+    if (unit.returnsCard && !unit.singleUse) {
       side.deck.push(unit.inst);
       drawUp(side);
     }
@@ -157,6 +168,10 @@
         hp: card.hp,
         maxHp: card.hp,
         returnsCard: i === 0, // exactly one copy owns the card
+        singleUse: state.finalStretch, // snapshot at deploy time
+        engaged: false, // locked side by side with an enemy unit
+        engagePartner: null, // fieldId of the unit it's clashing with
+        engageTimer: 0,
       });
     }
     drawUp(side);
@@ -184,6 +199,7 @@
   function moveUnits(dt) {
     state.lanes.forEach((lane) => {
       lane.forEach((u) => {
+        if (u.engaged) return; // units locked in a side-by-side clash hold position
         const dir = u.side === 'player' ? 1 : -1;
         u.pos += dir * UNIT_SPEED * dt;
         u.pos = Math.max(0, Math.min(TRACK_END, u.pos));
@@ -231,13 +247,20 @@
     return unit.hp + (Number(amount) || 0);
   }
 
-  // When the two front-most opposing units in a lane touch, they trade:
-  // the lower-hp unit dies and the winner keeps the difference. Equal hp
-  // means both are destroyed.
-  function resolveCombat() {
+  function disengage(u) {
+    u.engaged = false;
+    u.engagePartner = null;
+    u.engageTimer = 0;
+  }
+
+  // Two front-most opposing units walk straight at each other. When they reach
+  // the same point they lock side by side (the player unit slides left, the
+  // enemy right — handled by the renderer) and clash after ENGAGE_TIME: the
+  // lower-hp unit dies and the winner keeps the difference. Equal hp = both die.
+  function resolveCombat(dt) {
     state.lanes.forEach((lane, laneIndex) => {
       let guard = 0;
-      // loop so a survivor can immediately clash with the next unit behind
+      // loop so a survivor can immediately meet the next unit behind
       while (guard < 8) {
         guard += 1;
         const mine = lane.filter((u) => u.side === 'player').sort((a, b) => b.pos - a.pos);
@@ -245,41 +268,67 @@
         if (!mine.length || !theirs.length) return;
         const a = mine[0];
         const b = theirs[0];
-        if (a.pos < b.pos - ENGAGE_DIST) return; // not touching yet
 
-        const meetPos = (a.pos + b.pos) / 2;
-        const effA = effectiveHp(a, b);
-        const effB = effectiveHp(b, a);
-        if (effA > effB) {
-          a.hp = Math.min(a.maxHp, effA - effB);
-          destroy(b);
-          flash(laneIndex, meetPos, `-${Units.get(b.id).name}`);
-        } else if (effB > effA) {
-          b.hp = Math.min(b.maxHp, effB - effA);
-          destroy(a);
-          flash(laneIndex, meetPos, `-${Units.get(a.id).name}`);
-        } else {
-          destroy(a);
-          destroy(b);
-          flash(laneIndex, meetPos, 'Trade!');
+        // Clear any stale engagement left over from a partner that has died.
+        if (a.engaged && a.engagePartner !== b.fieldId) disengage(a);
+        if (b.engaged && b.engagePartner !== a.fieldId) disengage(b);
+
+        if (a.engaged && b.engaged) {
+          // locked side by side — count down, then resolve the clash
+          a.engageTimer -= dt;
+          b.engageTimer -= dt;
+          if (a.engageTimer > 0) return; // still trading blows this frame
+          const meetPos = a.pos;
+          const effA = effectiveHp(a, b);
+          const effB = effectiveHp(b, a);
+          if (effA > effB) {
+            a.hp = Math.min(a.maxHp, effA - effB);
+            disengage(a);
+            destroy(b);
+            flash(laneIndex, meetPos, `-${Units.get(b.id).name}`);
+          } else if (effB > effA) {
+            b.hp = Math.min(b.maxHp, effB - effA);
+            disengage(b);
+            destroy(a);
+            flash(laneIndex, meetPos, `-${Units.get(a.id).name}`);
+          } else {
+            destroy(a);
+            destroy(b);
+            flash(laneIndex, meetPos, 'Trade!');
+          }
+          continue; // survivor may meet the next unit
         }
+
+        if (a.pos < b.pos - ENGAGE_DIST) return; // haven't reached each other yet
+
+        // they've met: snap both to the meeting point and lock them together
+        const meetPos = (a.pos + b.pos) / 2;
+        a.pos = meetPos;
+        b.pos = meetPos;
+        a.engaged = true;
+        b.engaged = true;
+        a.engagePartner = b.fieldId;
+        b.engagePartner = a.fieldId;
+        a.engageTimer = ENGAGE_TIME;
+        b.engageTimer = ENGAGE_TIME;
+        return; // engaged this frame; resolves on a later tick
       }
     });
   }
 
-  // A castle is hit when the TIP of a unit's circle crosses that castle's line.
-  // Runs AFTER resolveCombat, which is what makes a last-moment defensive
+  // A castle is hit when the CENTRE of a unit's circle crosses that castle's
+  // line. Runs AFTER resolveCombat, which is what makes a last-moment defensive
   // placement work: a blocker that reaches the attacker on the same tick kills
   // it before this ever sees it.
   function hitStructures() {
     state.lanes.forEach((lane) => {
       // copy: destroy() mutates the lane while we iterate
       lane.slice().forEach((u) => {
-        if (u.side === 'player' && u.pos + UNIT_RADIUS >= ENEMY_LINE) {
+        if (u.side === 'player' && u.pos >= ENEMY_LINE) {
           state.enemy.structureHp -= 1;
           log(`${Units.get(u.id).name} smashes the enemy wall!`);
           destroy(u);
-        } else if (u.side === 'enemy' && u.pos - UNIT_RADIUS <= PLAYER_LINE) {
+        } else if (u.side === 'enemy' && u.pos <= PLAYER_LINE) {
           state.player.structureHp -= 1;
           log(`${Units.get(u.id).name} smashes your wall!`);
           destroy(u);
@@ -323,11 +372,16 @@
     if (state.phase !== 'playing') return;
     // guard against huge dt after a tab is backgrounded
     const step = Math.min(dt, 0.1);
+    state.matchTime = Math.max(0, state.matchTime - step);
+    if (!state.finalStretch && state.matchTime <= FINAL_STRETCH) {
+      state.finalStretch = true;
+      log('Final minute! Cards played from now on are single-use.');
+    }
     regen(state.player, step);
     regen(state.enemy, step);
     moveUnits(step);
     enforceSpacing();
-    resolveCombat();
+    resolveCombat(step);
     hitStructures();
     enemyThink(step);
     checkWin();
@@ -352,6 +406,8 @@
     LANE_COUNT,
     HAND_SIZE,
     STRUCTURE_HP,
+    MATCH_DURATION,
+    FINAL_STRETCH,
     TRACK_END,
     UNIT_SPEED,
     MIN_GAP,

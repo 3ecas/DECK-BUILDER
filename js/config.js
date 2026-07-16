@@ -42,7 +42,7 @@ window.RTS_CONFIG = {
   // allows cross-origin reads (e.g. a published Google Sheet CSV link).
   cardsUrl: 'cards.csv',
 
-  unitSpeed: 4, // track units/sec. Lane is 100 long -> 25s to cross. Same for every unit.
+  unitSpeed: 3.2, // track units/sec. This is the 100% baseline speed; modifiers scale off it.
   startingMana: 3, // mana both sides begin each round with
   currencyPerWin: 50, // coins earned per round won
   spinCost: 100, // coins per roulette spin
