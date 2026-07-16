@@ -22,6 +22,7 @@
 
   let pendingPack = null;
   let packState = null; // null | 'closed' | 'open'
+  let verdictShown = false; // has the VICTORY/DEFEAT card been shown this round?
   let editingDeck = null; // deck object being edited
   let lastSpin = null; // result of the most recent roulette spin
   let currentHubTab = 'decks'; // which tab is showing inside the DECK hub popup
@@ -55,11 +56,9 @@
 
           <div class="field">
             ${lanes}
-            <button class="engage-btn">Engage</button>
           </div>
 
           <div class="bottom-row">
-            <button class="deck-btn"><span class="deck-btn-ico">🃏</span><span class="deck-btn-lbl">DECK</span></button>
             <div class="wall player-wall">
               <span class="wall-icon">🏰</span>
               <span class="wall-hp"></span>
@@ -68,11 +67,13 @@
           </div>
 
           <div class="mana-row">
+            <button class="deck-btn">🃏 DECK</button>
             <div class="mana-bar">
               <div class="mana-fill"></div>
               <div class="mana-ticks">${'<span class="mana-cell"></span>'.repeat(Arena.MANA_MAX)}</div>
               <span class="mana-text"></span>
             </div>
+            <button class="engage-btn">Engage</button>
           </div>
 
           <div class="arena-hand"></div>
@@ -93,10 +94,10 @@
 
   /* ---------------- per-frame sync ---------------- */
 
-  function hearts(n, max) {
-    let s = '';
-    for (let i = 0; i < max; i++) s += i < n ? '❤️' : '🖤';
-    return s;
+  // Walls have enough hp now that a row of hearts would be unreadable — show
+  // the number instead.
+  function wallHp(n, max) {
+    return `❤️ ${Math.max(0, n)}/${max}`;
   }
 
   function syncHand() {
@@ -136,8 +137,12 @@
         const off = u.engaged ? (u.side === 'player' ? -ENGAGE_OFFSET : ENGAGE_OFFSET) : 0;
         el.style.marginLeft = `${TOKEN_HALF * -1 + off}px`;
         el.classList.toggle('engaged', !!u.engaged);
+        // Show the buffed value, so an aura is visible on the units it helps.
+        const shown = Arena.power(u, null);
         const hpEl = el.querySelector('.tok-hp');
-        if (hpEl.textContent !== String(u.hp)) hpEl.textContent = u.hp;
+        if (hpEl.textContent !== String(shown)) hpEl.textContent = shown;
+        hpEl.classList.toggle('buffed', (u.buff || 0) > 0);
+        hpEl.classList.toggle('debuffed', (u.buff || 0) < 0);
       });
     });
     unitEls.forEach((el, id) => {
@@ -175,8 +180,8 @@
 
     const ew = root.querySelector('.enemy-wall .wall-hp');
     const pw = root.querySelector('.player-wall .wall-hp');
-    if (ew) ew.textContent = hearts(playing ? s.enemy.structureHp : Arena.STRUCTURE_HP, Arena.STRUCTURE_HP);
-    if (pw) pw.textContent = hearts(playing ? s.player.structureHp : Arena.STRUCTURE_HP, Arena.STRUCTURE_HP);
+    if (ew) ew.textContent = wallHp(playing ? s.enemy.structureHp : Arena.STRUCTURE_HP, Arena.STRUCTURE_HP);
+    if (pw) pw.textContent = wallHp(playing ? s.player.structureHp : Arena.STRUCTURE_HP, Arena.STRUCTURE_HP);
 
     const coin = root.querySelector('.coin-val');
     if (coin) coin.textContent = Collection.data.currency;
@@ -270,6 +275,9 @@
       <div class="menu-actions">
         <button class="btn newdeck-btn">New Deck</button>
         <button class="btn editdeck-btn">Edit Deck</button>
+      </div>
+      <div class="menu-actions shop-row">
+        <button class="btn shop-open-btn">🛒 Shop</button>
       </div>`;
   }
 
@@ -348,6 +356,7 @@
       ${result}
       <table class="stats-table odds-table"><caption>Odds</caption><tbody>${oddsRows}</tbody></table>
       <div class="menu-actions">
+        <button class="btn back-to-decks-btn">← Decks</button>
         <button class="btn btn-primary spin-btn" ${canSpin ? '' : 'disabled'}>Spin 🪙${CFG.spinCost}</button>
       </div>`;
   }
@@ -384,9 +393,9 @@
       <div class="gallery-grid">${tiles}</div>`;
   }
 
+  // Shop isn't a tab — it's reached from a button under New Deck.
   const HUB_TABS = [
     { key: 'decks', ico: '🃏', label: 'Decks' },
-    { key: 'shop', ico: '🛒', label: 'Shop' },
     { key: 'collection', ico: '📖', label: 'Collection' },
   ];
 
@@ -452,18 +461,12 @@
       </div>`;
   }
 
+  // Just the verdict. No buttons — a click anywhere dismisses it.
   function renderResult() {
     const won = Arena.state.winner === 'player';
     return `
-      <div class="overlay">
-        <div class="overlay-panel">
-          <h1>${won ? 'Wall Broken!' : 'You Fell'}</h1>
-          <p class="tagline">${won ? `+🪙 ${Arena.state.coinsWon || 0} coins.` : 'The enemy tore your wall down.'}</p>
-          <div class="menu-actions">
-            <button class="btn btn-primary againbtn">Engage Again</button>
-            <button class="btn closepop-btn">Close</button>
-          </div>
-        </div>
+      <div class="overlay overlay-dismiss">
+        <div class="verdict ${won ? 'verdict-win' : 'verdict-lose'}">${won ? 'VICTORY' : 'DEFEAT'}</div>
       </div>`;
   }
 
@@ -483,7 +486,7 @@
             </section>
             <section class="howto-section">
               <h2>🏰 Winning</h2>
-              <p>A unit reaching the enemy wall deals 1 damage and is destroyed. Two hits wins the round and earns coins plus a pack.</p>
+              <p>Each wall has ${Arena.STRUCTURE_HP} hp. A unit reaching the enemy wall deals <b>its own current HP</b> as damage and is destroyed — so a unit that survived a clash hits for less. Drop the wall to 0 to win the round and earn coins plus a pack.</p>
             </section>
           </div>
           <button class="btn btn-primary closepop-btn">Got it</button>
@@ -570,19 +573,42 @@
     stopLoop();
     syncArena();
     if (phase === 'gameover' && !root.querySelector('.overlay')) {
-      if (Arena.state.winner === 'player' && !Arena.state.packAwarded) {
-        Arena.state.packAwarded = true;
-        packState = 'closed';
-      }
-      if (packState === 'closed') showPopup(renderPackClosed());
+      // The verdict comes first and is dismissed by clicking anywhere; the pack
+      // (if any) follows after that.
+      if (!verdictShown) {
+        verdictShown = true;
+        showPopup(renderResult());
+      } else if (packState === 'closed') showPopup(renderPackClosed());
       else if (packState === 'open') showPopup(renderPackOpen());
-      else showPopup(renderResult());
     }
+  }
+
+  // Called when the player clicks away the VICTORY/DEFEAT card.
+  function dismissVerdict() {
+    closePopup();
+    if (Arena.state.winner === 'player' && !Arena.state.packAwarded) {
+      Arena.state.packAwarded = true;
+      packState = 'closed';
+      showPopup(renderPackClosed());
+      return;
+    }
+    backToIdle();
+  }
+
+  function backToIdle() {
+    closePopup();
+    packState = null;
+    pendingPack = null;
+    Arena.returnToIdle();
+    unitEls.forEach((el) => el.remove());
+    unitEls.clear();
+    render();
   }
 
   function engage() {
     pendingPack = null;
     packState = null;
+    verdictShown = false;
     closePopup();
     Arena.newGame();
     Arena.state.packAwarded = false;
@@ -622,7 +648,9 @@
       const slot = e.target.closest('[data-slot-id]');
       const poolCard = e.target.closest('[data-pool-id]');
 
-      if (e.target.closest('.engage-btn') || e.target.closest('.againbtn')) {
+      if (e.target.closest('.overlay-dismiss')) {
+        dismissVerdict(); // the verdict card: a click anywhere clears it
+      } else if (e.target.closest('.engage-btn') || e.target.closest('.againbtn')) {
         engage();
       } else if (e.target.closest('.deck-btn')) {
         currentHubTab = 'decks';
@@ -630,24 +658,23 @@
         showPopup(renderDeckHub(currentHubTab));
       } else if (hubTab) {
         currentHubTab = hubTab.dataset.hubTab;
-        if (currentHubTab === 'shop') lastSpin = null;
+        showPopup(renderDeckHub(currentHubTab));
+      } else if (e.target.closest('.shop-open-btn')) {
+        currentHubTab = 'shop';
+        lastSpin = null;
+        showPopup(renderDeckHub(currentHubTab));
+      } else if (e.target.closest('.back-to-decks-btn')) {
+        currentHubTab = 'decks';
         showPopup(renderDeckHub(currentHubTab));
       } else if (e.target.closest('.closepop-btn')) {
-        closePopup();
-        if (Arena.state.phase === 'gameover') {
-          Arena.returnToIdle();
-          unitEls.forEach((el) => el.remove());
-          unitEls.clear();
-          render();
-        }
+        if (Arena.state.phase === 'gameover') backToIdle();
+        else closePopup();
       } else if (e.target.closest('.open-pack-btn')) {
         pendingPack = Collection.openPack();
         packState = 'open';
         showPopup(renderPackOpen());
       } else if (e.target.closest('.packok-btn')) {
-        pendingPack = null;
-        packState = null;
-        showPopup(renderResult());
+        backToIdle(); // verdict already shown before the pack
       } else if (e.target.closest('.packdeck-btn')) {
         pendingPack = null;
         packState = null;

@@ -1163,6 +1163,19 @@ body {
   font-size: 1.4rem;
 }
 
+/* an aura is lifting (or sapping) this unit's power right now */
+.tok-hp.buffed {
+  background: #14532d;
+  border-color: #4ade80;
+  color: #bbf7d0;
+}
+
+.tok-hp.debuffed {
+  background: #4a1010;
+  border-color: #ff6659;
+  color: #ffc9c4;
+}
+
 .tok-hp {
   position: absolute;
   top: -6px;

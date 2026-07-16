@@ -25,16 +25,25 @@
 //  There is no speed column — every unit moves at unitSpeed below.
 //
 //  ---- MODIFIERS ----
-//  `keyword arg arg`, separated by `;` for more than one:
+//  `keyword arg arg`, separated by `;` for as many as you like. They stack:
 //
-//     swarm 3                deploy 3 copies at once
-//     bonus_vs red 3         +3 hp while clashing against a red unit
-//     swarm 2; bonus_vs blue 2
+//     swarm 3                     deploy 3 copies at once
+//     bonus_vs red 3              +3 power while clashing against a red unit
+//     flame_trail 1 [D]           on deploy, burn every enemy ahead in the lane
+//                                 for 1 (within D, or the whole lane)
+//     aura_ahead 2 20             friendlies up to 20 ahead get +2 power
+//     aura_weaken 1 15            enemies up to 15 ahead get -1 power
 //
-//  Those two are wired up. You can invent any other keyword and write it in the
-//  column now — the game still loads and prints a console note naming any it
-//  doesn't know yet, so nothing fails silently. Tell me the keyword and what it
-//  should do and I'll implement it.
+//     flame_trail 2; aura_ahead 1 15      <- combine freely
+//
+//  Every keyword is implemented ONCE in js/effects.js and reused by any number
+//  of cards, so a new card that uses existing keywords needs no code at all.
+//  Distances are in track units (the lane is 100 long).
+//
+//  You can invent any other keyword and write it in the column now — the game
+//  still loads and prints a console note naming any it doesn't know yet, so
+//  nothing fails silently. Tell me the keyword and what it should do and I'll
+//  add it to js/effects.js.
 // ============================================================================
 
 window.RTS_CONFIG = {

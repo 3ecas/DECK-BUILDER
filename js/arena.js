@@ -6,10 +6,11 @@
 // clock and deploy from a 10-card deck that cycles through a 4-card hand.
 (function (global) {
   const Units = global.RTS.Units;
+  const Effects = global.RTS.Effects;
 
   const MANA_MAX = 10;
   const MANA_PER_SECOND = 0.5; // 1 mana every 2 seconds
-  const STRUCTURE_HP = 2; // two hits and you're out
+  const STRUCTURE_HP = 10; // a unit that reaches a wall deals its own hp as damage
   const HAND_SIZE = 4;
   const LANE_COUNT = 3;
   const MATCH_DURATION = 120; // 2:00 total. Last 60s, played cards stop recycling.
@@ -115,7 +116,7 @@
     drawUp(state.player);
     drawUp(state.enemy);
     state.phase = 'playing';
-    log('Battle begins. Break two walls to win.');
+    log(`Battle begins. Break the enemy wall (${STRUCTURE_HP} hp) to win.`);
   }
 
   function sideOf(unit) {
@@ -128,9 +129,13 @@
   // puts it back — otherwise the deck would breed extra copies. A unit played
   // during the final stretch is singleUse: it's gone for good once destroyed.
   function destroy(unit) {
+    if (unit.dying) return; // a death effect killed something that killed us back
+    unit.dying = true;
     const lane = state.lanes[unit.lane];
     const idx = lane.indexOf(unit);
     if (idx >= 0) lane.splice(idx, 1);
+    // Fire onDeath AFTER removal, so a death effect can never hit the corpse.
+    Effects.hooksFor(Units.get(unit.id), 'onDeath').forEach(({ fn, args }) => fn(unit, args, effectApi));
     const side = sideOf(unit);
     if (unit.returnsCard && !unit.singleUse) {
       side.deck.push(unit.inst);
@@ -151,13 +156,13 @@
 
     // `swarm N` deploys N copies, staggered a little along the lane so they
     // arrive (and clash) one after another instead of as a single blob.
-    const swarmArgs = Units.modArgs(card, 'swarm');
-    const copies = swarmArgs ? Math.max(1, Math.floor(Number(swarmArgs[0]) || 1)) : 1;
+    const copies = Effects.deployCount(card);
 
+    const spawned = [];
     for (let i = 0; i < copies; i++) {
       spawnSeq += 1;
       const back = i * MIN_GAP; // spawn swarm copies already spaced out
-      state.lanes[laneIndex].push({
+      const unit = {
         fieldId: spawnSeq,
         inst,
         id: inst.id,
@@ -167,17 +172,28 @@
         pos: side.key === 'player' ? SPAWN_POS + back : TRACK_END - SPAWN_POS - back,
         hp: card.hp,
         maxHp: card.hp,
+        buff: 0, // aura buffs/debuffs, recomputed every tick
+        speedMult: 1, // 1 = the 100% baseline speed
+        speedTimer: 0, // seconds left on a temporary speed change
         returnsCard: i === 0, // exactly one copy owns the card
         singleUse: state.finalStretch, // snapshot at deploy time
         engaged: false, // locked side by side with an enemy unit
         engagePartner: null, // fieldId of the unit it's clashing with
         engageTimer: 0,
-      });
+      };
+      state.lanes[laneIndex].push(unit);
+      spawned.push(unit);
     }
     drawUp(side);
     log(
       `${side.key === 'player' ? 'You' : 'Enemy'} played ${card.name}${copies > 1 ? ` x${copies}` : ''} (lane ${laneIndex + 1}).`
     );
+
+    // Fire on-deploy effects once every copy is on the field, so an effect can
+    // see its own swarm-mates.
+    spawned.forEach((unit) => {
+      Effects.hooksFor(card, 'onDeploy').forEach(({ fn, args }) => fn(unit, args, effectApi));
+    });
     return true;
   }
 
@@ -196,12 +212,27 @@
     side.mana = Math.min(MANA_MAX, side.mana + MANA_PER_SECOND * dt);
   }
 
+  // Temporary per-unit states that just count down (speed boosts, etc).
+  function tickTimers(dt) {
+    state.lanes.forEach((lane) =>
+      lane.forEach((u) => {
+        if (u.speedTimer > 0) {
+          u.speedTimer -= dt;
+          if (u.speedTimer <= 0) {
+            u.speedTimer = 0;
+            u.speedMult = 1; // back to the 100% baseline
+          }
+        }
+      })
+    );
+  }
+
   function moveUnits(dt) {
     state.lanes.forEach((lane) => {
       lane.forEach((u) => {
         if (u.engaged) return; // units locked in a side-by-side clash hold position
         const dir = u.side === 'player' ? 1 : -1;
-        u.pos += dir * UNIT_SPEED * dt;
+        u.pos += dir * UNIT_SPEED * (u.speedMult || 1) * dt;
         u.pos = Math.max(0, Math.min(TRACK_END, u.pos));
       });
     });
@@ -236,15 +267,125 @@
     state.flashes.push({ lane, pos, text });
   }
 
-  // `bonus_vs <color> N` — the unit fights as if it had N extra hp, but only
-  // against that colour. The bonus is spent in the clash, so the winner never
-  // ends up above its own maxHp.
-  function effectiveHp(unit, foe) {
-    const args = Units.modArgs(Units.get(unit.id), 'bonus_vs');
-    if (!args) return unit.hp;
-    const [color, amount] = args;
-    if (Units.get(foe.id).color !== color) return unit.hp;
-    return unit.hp + (Number(amount) || 0);
+  /* ---------------- effects ---------------- */
+
+  // Units ahead of `self` in its own lane, nearest first. "Ahead" is up the
+  // track for the player and down it for the enemy, so effects are written once
+  // and work for both sides.
+  function unitsAhead(self, side, dist) {
+    const dirUp = self.side === 'player';
+    return state.lanes[self.lane]
+      .filter((u) => {
+        if (u === self || u.side !== side) return false;
+        const gap = dirUp ? u.pos - self.pos : self.pos - u.pos;
+        if (gap <= 0) return false;
+        return dist === undefined || gap <= dist;
+      })
+      .sort((a, b) => (dirUp ? a.pos - b.pos : b.pos - a.pos));
+  }
+
+  // Units of `side` within `dist` of self in EITHER direction (blasts, not beams).
+  function unitsNear(self, side, dist) {
+    return state.lanes[self.lane].filter(
+      (u) => u !== self && u.side === side && Math.abs(u.pos - self.pos) <= dist
+    );
+  }
+
+  const foeOf = (self) => (self.side === 'player' ? 'enemy' : 'player');
+
+  // Handed to every effect hook. This is the whole surface an effect can touch,
+  // which keeps effects declarative and impossible to break the engine with.
+  const effectApi = {
+    alliesAhead: (self, dist) => unitsAhead(self, self.side, dist),
+    enemiesAhead: (self, dist) => unitsAhead(self, foeOf(self), dist),
+    alliesNear: (self, dist) => unitsNear(self, self.side, dist),
+    enemiesNear: (self, dist) => unitsNear(self, foeOf(self), dist),
+    otherLanes: (self) =>
+      Array.from({ length: LANE_COUNT }, (_, i) => i).filter((i) => i !== self.lane),
+    colorOf: (unit) => Units.get(unit.id).color,
+
+    // TEMPORARY buff — recomputed every tick by applyAuras(), so it disappears
+    // the moment its source stops applying it.
+    addBuff: (unit, amount) => {
+      unit.buff += amount;
+    },
+
+    // PERMANENT buff — raises maxHp too, otherwise the clash clamp
+    // (min(maxHp, ...)) would quietly erase it on the unit's next fight.
+    // Survives the death of whatever granted it.
+    buffPermanent: (unit, amount) => {
+      unit.maxHp += amount;
+      unit.hp += amount;
+    },
+
+    damage: (unit, amount) => {
+      unit.hp -= amount;
+      if (unit.hp <= 0) destroy(unit);
+    },
+
+    // Temporary speed change. mult is a multiple of the 100% baseline speed.
+    setSpeed: (unit, mult, seconds) => {
+      unit.speedMult = mult;
+      unit.speedTimer = seconds;
+    },
+
+    // Put an extra unit on the field. Summons are TOKENS: returnsCard is false
+    // so they never breed copies of the card back into the deck, and their
+    // onDeploy is deliberately NOT fired — otherwise a summoning card would
+    // summon forever.
+    summon: (self, opts) => {
+      const laneIndex = opts.lane;
+      if (laneIndex < 0 || laneIndex >= LANE_COUNT) return null;
+      const card = Units.get(self.id);
+      const hp = opts.hp || card.hp;
+      spawnSeq += 1;
+      const unit = {
+        fieldId: spawnSeq,
+        inst: self.inst,
+        id: self.id,
+        side: self.side,
+        lane: laneIndex,
+        pos: self.side === 'player' ? SPAWN_POS : TRACK_END - SPAWN_POS,
+        hp,
+        maxHp: hp,
+        buff: 0,
+        speedMult: 1,
+        speedTimer: 0,
+        returnsCard: false,
+        singleUse: self.singleUse,
+        engaged: false,
+        engagePartner: null,
+        engageTimer: 0,
+      };
+      state.lanes[laneIndex].push(unit);
+      return unit;
+    },
+
+    log,
+    flash: (lane, pos, text) => flash(lane, pos, text),
+  };
+
+  // Auras are wiped and rebuilt from scratch every tick. That's what makes any
+  // number of buffs/debuffs from any number of sources stack cleanly — nothing
+  // is ever permanently baked into a unit, so a source dying or walking out of
+  // range just stops contributing on the next tick.
+  function applyAuras() {
+    state.lanes.forEach((lane) => lane.forEach((u) => { u.buff = 0; }));
+    state.lanes.forEach((lane) =>
+      lane.slice().forEach((u) => {
+        Effects.hooksFor(Units.get(u.id), 'aura').forEach(({ fn, args }) => fn(u, args, effectApi));
+      })
+    );
+  }
+
+  // A unit's fighting power: its real hp, plus aura buffs, plus any situational
+  // power() hooks (e.g. bonus_vs). `foe` is null when hitting a wall.
+  function power(unit, foe) {
+    let total = unit.hp + (unit.buff || 0);
+    Effects.hooksFor(Units.get(unit.id), 'power').forEach(({ fn, args }) => {
+      total += fn(unit, foe, args, effectApi) || 0;
+    });
+    return Math.max(0, total);
   }
 
   function disengage(u) {
@@ -279,8 +420,8 @@
           b.engageTimer -= dt;
           if (a.engageTimer > 0) return; // still trading blows this frame
           const meetPos = a.pos;
-          const effA = effectiveHp(a, b);
-          const effB = effectiveHp(b, a);
+          const effA = power(a, b);
+          const effB = power(b, a);
           if (effA > effB) {
             a.hp = Math.min(a.maxHp, effA - effB);
             disengage(a);
@@ -317,22 +458,25 @@
   }
 
   // A castle is hit when the CENTRE of a unit's circle crosses that castle's
-  // line. Runs AFTER resolveCombat, which is what makes a last-moment defensive
-  // placement work: a blocker that reaches the attacker on the same tick kills
-  // it before this ever sees it.
+  // line. The unit deals its CURRENT hp as damage — so a unit chewed up in a
+  // clash on the way in hits for less than a fresh one. Runs AFTER
+  // resolveCombat, which is what makes a last-moment defensive placement work:
+  // a blocker that reaches the attacker on the same tick kills it before this
+  // ever sees it.
   function hitStructures() {
-    state.lanes.forEach((lane) => {
+    state.lanes.forEach((lane, laneIndex) => {
       // copy: destroy() mutates the lane while we iterate
       lane.slice().forEach((u) => {
-        if (u.side === 'player' && u.pos >= ENEMY_LINE) {
-          state.enemy.structureHp -= 1;
-          log(`${Units.get(u.id).name} smashes the enemy wall!`);
-          destroy(u);
-        } else if (u.side === 'enemy' && u.pos <= PLAYER_LINE) {
-          state.player.structureHp -= 1;
-          log(`${Units.get(u.id).name} smashes your wall!`);
-          destroy(u);
-        }
+        const target = u.side === 'player' ? state.enemy : state.player;
+        const crossed = u.side === 'player' ? u.pos >= ENEMY_LINE : u.pos <= PLAYER_LINE;
+        if (!crossed) return;
+        const dmg = power(u, null); // buffs count, so an aura also pushes damage
+        target.structureHp = Math.max(0, target.structureHp - dmg);
+        log(
+          `${Units.get(u.id).name} smashes ${u.side === 'player' ? 'the enemy' : 'your'} wall for ${dmg}!`
+        );
+        flash(laneIndex, u.pos, `-${dmg}`);
+        destroy(u);
       });
     });
   }
@@ -379,8 +523,10 @@
     }
     regen(state.player, step);
     regen(state.enemy, step);
+    tickTimers(step);
     moveUnits(step);
     enforceSpacing();
+    applyAuras(); // rebuild every buff/debuff before anything reads power()
     resolveCombat(step);
     hitStructures();
     enemyThink(step);
@@ -400,6 +546,7 @@
     newGame,
     playCard,
     canAfford,
+    power,
     tick,
     returnToIdle,
     MANA_MAX,

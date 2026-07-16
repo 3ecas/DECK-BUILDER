@@ -4,13 +4,17 @@
   const VALID_COLORS = ['red', 'green', 'blue', 'yellow', 'grey'];
   const VALID_RARITIES = ['normal', 'rare', 'special', 'ultimate'];
 
-  // Modifier keywords the engine implements. Anything else in the modifiers
-  // column still parses (so the game runs), but gets reported so you know it's
-  // written down and not yet wired up.
-  const KNOWN_MODIFIERS = {
-    swarm: 'Deploys N copies at once.',
-    bonus_vs: 'Gains +N hp while clashing against a <color> unit.',
-  };
+  // Modifier keywords the engine implements — read straight off the effect
+  // registry so there is a single source of truth (js/effects.js). Anything
+  // else in the modifiers column still parses (so the game runs), but gets
+  // reported so you know it's written down and not yet wired up.
+  const Effects = global.RTS && global.RTS.Effects;
+  const KNOWN_MODIFIERS = {};
+  if (Effects) {
+    Effects.KEYWORDS.forEach((k) => {
+      KNOWN_MODIFIERS[k] = Effects.EFFECTS[k].doc || k;
+    });
+  }
 
   // Filled in by load(); other modules hold a reference to these objects, so
   // they're mutated in place rather than reassigned.

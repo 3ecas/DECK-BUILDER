@@ -1,19 +1,43 @@
-﻿id,name,emoji,mana,hp,color,rarity,modifiers,starter
+id,name,emoji,mana,hp,color,rarity,modifiers,starter
+marn_guard,Marn Guard,🪖,1,1,blue,normal,,yes
 quick_jab,Quick Jab,🗡️,1,2,red,normal,,yes
 imp,Imp,👹,1,3,red,normal,,yes
+goblin,Goblin,👺,1,2,green,normal,,yes
+marn_priest,Marn Priest,🕊️,2,1,yellow,normal,buff_ahead 1,yes
 rats,Rats,🐀,2,2,grey,normal,swarm 3,
+bats,Bats,🦇,2,2,grey,normal,swarm 2,
 shade,Shade,👻,2,3,grey,normal,,yes
+acolyte,Acolyte,🕯️,2,3,yellow,normal,,yes
 strike,Strike,⚔️,2,4,red,normal,,yes
+archer,Archer,🏹,3,4,green,normal,,
+wildland_boar,Wildland Boar,🦬,3,2,green,rare,summon_lanes 1,
+wren,Wren the Explorer,🧭,3,4,green,rare,dash 2.5 4,
 backstab,Backstab,🥷,3,4,grey,rare,bonus_vs red 2,yes
+spearman,Spearman,🔱,3,5,blue,normal,,
 venom_fang,Venom Fang,🐍,3,5,green,normal,,yes
 guard,Guard,🛡️,3,7,blue,normal,,yes
 wolf_pack,Wolf Pack,🐺,4,3,grey,rare,swarm 2,
+pyromancer,Pyromancer,🧨,4,5,red,rare,flame_trail 1,
+warchief,Warchief,🚩,4,6,yellow,rare,aura_ahead 2 20,
+hexer,Hexer,🪄,4,5,green,rare,aura_weaken 1 15,
+bomber,Bomber,💣,4,4,grey,rare,death_blast 3 12,
+priest,Priest,🙏,4,6,yellow,rare,bonus_vs green 2,
 fireball,Fireball,🔥,4,6,red,rare,bonus_vs green 2,yes
-heavy_slash,Heavy Slash,🪓,4,8,red,normal,,yes
 mender,Mender,✨,4,7,yellow,normal,,
+cavalry,Cavalry,🐴,4,7,red,normal,,
+heavy_slash,Heavy Slash,🪓,4,8,red,normal,,yes
+coven,Coven,🧙,5,5,green,rare,swarm 2,
 warlock,Warlock,🔮,5,9,green,rare,,
+berserker,Berserker,🪃,5,9,red,rare,bonus_vs blue 2,
+golem,Golem,🪨,5,10,blue,rare,,
 iron_wall,Iron Wall,🧱,5,13,blue,rare,,yes
-brute,Brute,🐻,6,12,red,special,,
+paladin,Paladin,🏇,6,10,yellow,special,bonus_vs grey 3,
 executioner,Executioner,💀,6,11,grey,special,bonus_vs blue 3,
+brute,Brute,🐻,6,12,red,special,,
+hydra,Hydra,🐉,7,13,green,special,,
+lich,Lich,☠️,7,14,grey,special,bonus_vs yellow 3,
 rampage,Rampage,🐗,7,15,red,special,,
+titan,Titan,🌋,8,18,red,ultimate,,
 juggernaut,Juggernaut,🗿,8,20,blue,ultimate,,
+dragon,Dragon,🐲,9,16,red,ultimate,flame_trail 2; aura_ahead 1 15,
+worldbreaker,Worldbreaker,🌑,10,22,grey,ultimate,,
