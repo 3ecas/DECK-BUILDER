@@ -11,7 +11,7 @@
   const MANA_MAX = 10;
   const MANA_PER_SECOND = 0.5; // 1 mana every 2 seconds
   const STRUCTURE_HP = 10; // a unit that reaches a wall deals its own hp as damage
-  const HAND_SIZE = 4;
+  const HAND_SIZE = 5;
   const LANE_COUNT = 3;
   const MATCH_DURATION = 120; // 2:00 total. Last 60s, played cards stop recycling.
   const FINAL_STRETCH = 60;
@@ -88,13 +88,6 @@
     };
   }
 
-  // The enemy fields a random legal deck drawn from the whole library, so
-  // fights stay varied as the player's collection grows.
-  function randomEnemyDeck(size) {
-    const pool = Units.ALL_IDS;
-    return Array.from({ length: size }, () => pool[Math.floor(Math.random() * pool.length)]);
-  }
-
   function drawUp(side) {
     while (side.hand.length < HAND_SIZE && side.deck.length > 0) {
       side.hand.push(side.deck.shift());
@@ -103,12 +96,33 @@
 
   function newGame() {
     spawnSeq = 0;
+    const level = global.RTS.Collection.getLevel();
     const playerDeck = global.RTS.Collection.getDeck();
+    const cfg = global.RTS.Progression.configFor(level, playerDeck.length, STRUCTURE_HP);
+
     state.player = makeSide('player', playerDeck);
-    state.enemy = makeSide('enemy', randomEnemyDeck(playerDeck.length));
+    state.player.manaRate = 1;
+    state.player.statMult = 1;
+
+    state.enemy = makeSide('enemy', cfg.deck);
+    state.enemy.manaRate = cfg.manaRate;
+    state.enemy.statMult = cfg.statMult;
+    state.enemy.cadenceMin = cfg.cadenceMin;
+    state.enemy.cadenceMax = cfg.cadenceMax;
+    state.enemy.structureHp = cfg.wallHp;
+    state.enemy.maxStructureHp = cfg.wallHp;
+    state.enemy.mana = Math.min(MANA_MAX, cfg.startMana);
+
+    state.level = level;
+    state.world = cfg.world;
+    state.isBoss = cfg.isBoss;
+    state.bossName = cfg.name;
+    state.bossEmoji = cfg.emoji;
+    state.awardPack = false;
+
     state.lanes = makeLanes();
     state.winner = null;
-    state.enemyTimer = 2;
+    state.enemyTimer = 1.5;
     state.matchTime = MATCH_DURATION;
     state.finalStretch = false;
     state.log = [];
@@ -116,7 +130,11 @@
     drawUp(state.player);
     drawUp(state.enemy);
     state.phase = 'playing';
-    log(`Battle begins. Break the enemy wall (${STRUCTURE_HP} hp) to win.`);
+    log(
+      cfg.isBoss
+        ? `BOSS — ${cfg.name}! Break its wall (${cfg.wallHp} hp) to clear World ${cfg.world}.`
+        : `Level ${level}: break the enemy wall (${cfg.wallHp} hp) to advance.`
+    );
   }
 
   function sideOf(unit) {
@@ -158,6 +176,9 @@
     // arrive (and clash) one after another instead of as a single blob.
     const copies = Effects.deployCount(card);
 
+    // The enemy's units are buffed by the level's stat multiplier (player = 1).
+    const unitHp = Math.max(1, Math.round(card.hp * (side.statMult || 1)));
+
     const spawned = [];
     for (let i = 0; i < copies; i++) {
       spawnSeq += 1;
@@ -170,8 +191,8 @@
         lane: laneIndex,
         // enter just above your own castle line, mirrored per side
         pos: side.key === 'player' ? SPAWN_POS + back : TRACK_END - SPAWN_POS - back,
-        hp: card.hp,
-        maxHp: card.hp,
+        hp: unitHp,
+        maxHp: unitHp,
         buff: 0, // aura buffs/debuffs, recomputed every tick
         speedMult: 1, // 1 = the 100% baseline speed
         speedTimer: 0, // seconds left on a temporary speed change
@@ -209,7 +230,7 @@
   }
 
   function regen(side, dt) {
-    side.mana = Math.min(MANA_MAX, side.mana + MANA_PER_SECOND * dt);
+    side.mana = Math.min(MANA_MAX, side.mana + MANA_PER_SECOND * (side.manaRate || 1) * dt);
   }
 
   // Temporary per-unit states that just count down (speed boosts, etc).
@@ -337,7 +358,8 @@
       const laneIndex = opts.lane;
       if (laneIndex < 0 || laneIndex >= LANE_COUNT) return null;
       const card = Units.get(self.id);
-      const hp = opts.hp || card.hp;
+      const smul = sideOf(self).statMult || 1;
+      const hp = Math.max(1, Math.round((opts.hp || card.hp) * smul));
       spawnSeq += 1;
       const unit = {
         fieldId: spawnSeq,
@@ -484,9 +506,11 @@
   function enemyThink(dt) {
     state.enemyTimer -= dt;
     if (state.enemyTimer > 0) return;
-    state.enemyTimer = 1.2 + Math.random() * 1.8;
-
     const e = state.enemy;
+    const cMin = e.cadenceMin || 1.2;
+    const cMax = e.cadenceMax || 3.0;
+    state.enemyTimer = cMin + Math.random() * Math.max(0, cMax - cMin);
+
     const options = e.hand
       .map((inst, i) => ({ i, card: Units.get(inst.id) }))
       .filter((o) => o.card.mana <= e.mana);
@@ -499,16 +523,28 @@
   }
 
   function checkWin() {
+    const Collection = global.RTS.Collection;
     if (state.enemy.structureHp <= 0) {
       state.phase = 'gameover';
       state.winner = 'player';
-      state.coinsWon = (global.RTS_CONFIG && global.RTS_CONFIG.currencyPerWin) || 0;
-      global.RTS.Collection.addCurrency(state.coinsWon);
-      log('The enemy wall falls. You win!');
+      const wasBoss = state.isBoss;
+      const base = (global.RTS_CONFIG && global.RTS_CONFIG.currencyPerWin) || 0;
+      // bosses pay big and drop a pack; normal levels just pay coins
+      state.coinsWon = base + (wasBoss ? base * 3 : 0);
+      state.awardPack = wasBoss;
+      Collection.addCurrency(state.coinsWon);
+      Collection.advanceLevel(); // next Engage is the harder level
+      log(
+        wasBoss
+          ? `${state.bossName} falls! World ${state.world} cleared — +${state.coinsWon} coins and a pack.`
+          : `Level ${state.level} cleared! +${state.coinsWon} coins. On to level ${state.level + 1}.`
+      );
     } else if (state.player.structureHp <= 0) {
       state.phase = 'gameover';
       state.winner = 'enemy';
-      log('Your wall falls. You lose.');
+      state.awardPack = false;
+      Collection.resetRun(); // roguelike: the climb restarts at level 1
+      log(`Your wall falls at level ${state.level}. The climb resets to Level 1.`);
     }
   }
 

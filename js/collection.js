@@ -56,7 +56,25 @@
       activeDeck: Math.min((parsed && parsed.activeDeck) || 0, decks.length - 1),
       currency: (parsed && typeof parsed.currency === 'number') ? parsed.currency : 0,
       seen: (parsed && parsed.seen) || Object.keys(owned), // ids ever discovered
+      runLevel: (parsed && parsed.runLevel > 0) ? parsed.runLevel : 1, // current climb level
     };
+  }
+
+  /* ---------------- run / climb ---------------- */
+
+  function getLevel() {
+    return data.runLevel || 1;
+  }
+
+  function advanceLevel() {
+    data.runLevel = (data.runLevel || 1) + 1;
+    save();
+    return data.runLevel;
+  }
+
+  function resetRun() {
+    data.runLevel = 1;
+    save();
   }
 
   function save() {
@@ -235,6 +253,7 @@
     data.activeDeck = 0;
     data.currency = 0;
     data.seen = Object.keys(data.owned);
+    data.runLevel = 1;
     save();
   }
 
@@ -261,6 +280,9 @@
     selectDeck,
     getDeck,
     deckSorted,
+    getLevel,
+    advanceLevel,
+    resetRun,
     addCurrency,
     canSpin,
     spin,

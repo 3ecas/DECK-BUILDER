@@ -881,13 +881,26 @@ body {
   gap: 8px;
 }
 
-/* ---- top row: enemy wall + match timer ---- */
+/* ---- top row: stage info + enemy wall + match timer ---- */
 .top-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 24px;
   flex-shrink: 0;
+}
+
+.stage-info {
+  min-width: 220px;
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.stage-info .stage-boss {
+  color: var(--attack-light);
 }
 
 .match-timer {
@@ -909,57 +922,180 @@ body {
   50% { opacity: 0.45; }
 }
 
-/* ---- bottom row: DECK button + player wall + coin count ---- */
-.bottom-row {
+/* ---- victory / defeat verdict ---- */
+.verdict-wrap {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 16px;
+}
+
+.verdict {
+  font-size: 6rem;
+  font-weight: 900;
+  letter-spacing: 6px;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.8);
+}
+
+.verdict-win {
+  color: var(--gold);
+}
+
+.verdict-lose {
+  color: var(--attack-light);
+}
+
+.verdict-sub {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* ---- bottom HUD: soft rectangle. Small Decks/Shop menu on the left (with
+   Engage filling below); HP + gold line, energy bar and hand on the right. ---- */
+.hud {
+  display: flex;
+  justify-content: center;
   flex-shrink: 0;
 }
 
-.deck-btn {
+.hud-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 20px;
+  padding: 16px 22px;
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(40, 14, 14, 0.62), rgba(0, 0, 0, 0.52));
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+}
+
+/* left column: two small menu buttons, then Engage filling the rest */
+.hud-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 132px;
+}
+
+.menu-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.32);
-  border: 2px solid rgba(255, 255, 255, 0.15);
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px;
+  border-radius: 13px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.16);
   color: var(--text);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.deck-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--gold);
+.menu-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.deck-btn-ico {
-  font-size: 1.3rem;
+.menu-lbl {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.menu-ico {
+  font-size: 1.35rem;
   line-height: 1;
 }
 
-.deck-btn-lbl {
-  font-size: 0.85rem;
+.deck-btn {
+  border-color: rgba(111, 168, 220, 0.55);
+}
+
+.deck-btn:hover {
+  border-color: var(--defense-light);
+}
+
+.shop-open-btn {
+  border-color: rgba(212, 175, 55, 0.55);
+}
+
+.shop-open-btn:hover {
+  border-color: var(--gold);
+}
+
+/* engage — the big action button below the menu; keeps its slot in battle */
+.engage-btn {
+  flex: 1;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 22px;
+  border: 3px solid var(--attack-light);
+  background: radial-gradient(circle at 50% 28%, #e04030, #8a1c1c);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 0 26px rgba(230, 72, 60, 0.4);
+  transition: scale 0.12s ease, background 0.15s ease;
+}
+
+.engage-ico {
+  font-size: 2.1rem;
+  line-height: 1;
+}
+
+.engage-lbl {
+  font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.5px;
 }
 
-.coin-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 12px;
-  background: rgba(212, 175, 55, 0.12);
-  border: 2px solid rgba(212, 175, 55, 0.4);
+.engage-btn:hover {
+  scale: 1.03;
+  background: radial-gradient(circle at 50% 28%, #ef5a49, #a02020);
 }
 
-.coin-val {
-  font-size: 1.1rem;
+.engage-btn.hidden {
+  visibility: hidden; /* keep the slot so Decks/Shop don't jump */
+}
+
+/* right side of the bar: HP + gold line, energy bar, then the hand of cards.
+   Fixed width so the bar keeps its shape while idle. 5 cards @150 + gaps. */
+.hud-play {
+  width: 806px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.hud-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.hud-hp {
+  font-size: 1.2rem;
   font-weight: 800;
+  color: var(--text);
+}
+
+.player-wall-hp {
+  color: var(--attack-light);
+}
+
+.hud-gold {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.hud-gold .coin-val {
   color: var(--gold);
 }
 
@@ -993,37 +1129,8 @@ body {
   color: var(--text);
 }
 
-/* ---- engage button: centred over the arena, just above the player's wall ---- */
-.engage-btn {
-  position: absolute;
-  left: 50%;
-  bottom: 26px;
-  translate: -50% 0; /* `transform` is left free for the idle pulse */
-  z-index: 60;
-  width: 122px;
-  height: 122px;
-  border-radius: 50%;
-  border: 4px solid var(--attack-light);
-  background: radial-gradient(circle at 30% 30%, #e04030, #8a1c1c);
-  color: #fff;
-  font-weight: 800;
-  font-size: 1.25rem;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 40px rgba(230, 72, 60, 0.45);
-  transition: scale 0.12s ease;
-}
-
-.engage-btn:hover {
-  scale: 1.07;
-}
-
 .engage-btn:active {
-  scale: 0.94;
-}
-
-.engage-btn.hidden {
-  display: none;
+  scale: 0.97;
 }
 
 /* ---- walls ---- */
@@ -1219,21 +1326,16 @@ body {
 /* ---- mana ----
    The bar is exactly as wide as the three lanes together (3*158 + 2*32 = 538)
    and centred, split into MANA_MAX equal segments so each notch reads as 1 mana. */
-.mana-row {
-  display: flex;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
+/* energy bar — sits above the hand square, filling the play column's width */
 .mana-bar {
   position: relative;
-  width: 538px;
-  max-width: 100%;
-  height: 20px;
+  width: 100%;
+  height: 22px;
   background: #241033;
   border: 2px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
+  border-radius: 7px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .mana-fill {
@@ -1274,21 +1376,21 @@ body {
   pointer-events: none;
 }
 
-/* ---- hand ---- */
+/* ---- hand: the 5 cards, filling the right side of the HUD bar ---- */
 .arena-hand {
   display: flex;
   justify-content: center;
   align-items: flex-end;
   gap: 14px;
-  min-height: 152px;
-  flex-shrink: 0;
+  min-height: 240px;
+  flex: 1;
 }
 
 .unit-card {
   position: relative;
-  width: 108px;
-  height: 142px;
-  border-radius: 12px;
+  width: 150px;
+  height: 240px;
+  border-radius: 16px;
   /* colour comes from the .card-color-* class (see .unit-token note) */
   border-width: 3px;
   border-style: solid;
@@ -1311,35 +1413,35 @@ body {
 
 .mana-orb {
   position: absolute;
-  top: -12px;
-  left: -12px;
-  width: 38px;
-  height: 38px;
+  top: -14px;
+  left: -14px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: #6d28d9;
   border: 3px solid #c4b5fd;
   color: #fff;
   font-weight: 800;
-  font-size: 1.15rem;
+  font-size: 1.4rem;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .unit-emoji {
-  font-size: 3rem;
+  font-size: 4.2rem;
   line-height: 1;
 }
 
 .unit-name {
-  font-size: 0.9rem;
+  font-size: 1.05rem;
   font-weight: 700;
   text-align: center;
   line-height: 1.15;
 }
 
 .unit-hp {
-  font-size: 0.85rem;
+  font-size: 1rem;
   color: var(--text-dim);
 }
 

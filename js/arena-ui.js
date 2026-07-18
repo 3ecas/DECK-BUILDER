@@ -5,6 +5,7 @@
   const Units = global.RTS.Units;
   const Arena = global.RTS.Arena;
   const Collection = global.RTS.Collection;
+  const Progression = global.RTS.Progression;
   const CFG = global.RTS_CONFIG;
 
   // Token geometry, in the stage's design pixels — must match .unit-token in CSS.
@@ -47,6 +48,7 @@
       <div class="arena">
         <div class="arena-main">
           <div class="top-row">
+            <div class="stage-info"></div>
             <div class="wall enemy-wall">
               <span class="wall-icon">🏰</span>
               <span class="wall-hp"></span>
@@ -58,25 +60,27 @@
             ${lanes}
           </div>
 
-          <div class="bottom-row">
-            <div class="wall player-wall">
-              <span class="wall-icon">🏰</span>
-              <span class="wall-hp"></span>
+          <div class="hud">
+            <div class="hud-bar">
+              <div class="hud-menu">
+                <button class="menu-btn deck-btn"><span class="menu-lbl">Decks</span><span class="menu-ico">🃏</span></button>
+                <button class="menu-btn shop-open-btn"><span class="menu-lbl">Shop</span><span class="menu-ico">🛒</span></button>
+                <button class="engage-btn"><span class="engage-ico">⚔️</span><span class="engage-lbl">Engage</span></button>
+              </div>
+              <div class="hud-play">
+                <div class="hud-topline">
+                  <div class="hud-hp">❤️ <span class="player-wall-hp"></span></div>
+                  <div class="hud-gold">🪙 <span class="coin-val"></span></div>
+                </div>
+                <div class="mana-bar">
+                  <div class="mana-fill"></div>
+                  <div class="mana-ticks">${'<span class="mana-cell"></span>'.repeat(Arena.MANA_MAX)}</div>
+                  <span class="mana-text"></span>
+                </div>
+                <div class="arena-hand"></div>
+              </div>
             </div>
-            <div class="coin-tab"><span class="tab-ico">🪙</span><span class="coin-val"></span></div>
           </div>
-
-          <div class="mana-row">
-            <button class="deck-btn">🃏 DECK</button>
-            <div class="mana-bar">
-              <div class="mana-fill"></div>
-              <div class="mana-ticks">${'<span class="mana-cell"></span>'.repeat(Arena.MANA_MAX)}</div>
-              <span class="mana-text"></span>
-            </div>
-            <button class="engage-btn">Engage</button>
-          </div>
-
-          <div class="arena-hand"></div>
         </div>
       </div>`;
   }
@@ -179,12 +183,25 @@
     if (text) text.textContent = playing ? `⚡ ${Math.floor(s.player.mana)} / ${Arena.MANA_MAX}` : `⚡ 0 / ${Arena.MANA_MAX}`;
 
     const ew = root.querySelector('.enemy-wall .wall-hp');
-    const pw = root.querySelector('.player-wall .wall-hp');
-    if (ew) ew.textContent = wallHp(playing ? s.enemy.structureHp : Arena.STRUCTURE_HP, Arena.STRUCTURE_HP);
-    if (pw) pw.textContent = wallHp(playing ? s.player.structureHp : Arena.STRUCTURE_HP, Arena.STRUCTURE_HP);
+    const pw = root.querySelector('.player-wall-hp'); // in the HUD, its own heart in markup
+    // the enemy wall can be larger than the baseline on boss levels
+    const eMax = playing ? (s.enemy.maxStructureHp || Arena.STRUCTURE_HP) : Arena.STRUCTURE_HP;
+    if (ew) ew.textContent = wallHp(playing ? s.enemy.structureHp : Arena.STRUCTURE_HP, eMax);
+    if (pw) pw.textContent = `${playing ? s.player.structureHp : Arena.STRUCTURE_HP}/${Arena.STRUCTURE_HP}`;
 
     const coin = root.querySelector('.coin-val');
     if (coin) coin.textContent = Collection.data.currency;
+
+    const stage = root.querySelector('.stage-info');
+    if (stage) {
+      // during a battle show the level being fought; while idle show the one
+      // Engage will start next
+      const lvl = playing ? s.level : Collection.getLevel();
+      const m = Progression.meta(lvl);
+      stage.innerHTML = m.isBoss
+        ? `<span class="stage-boss">⚠ BOSS · ${m.emoji} ${esc(m.name)}</span> · LV ${lvl}`
+        : `LV ${lvl} · WORLD ${m.world}`;
+    }
 
     const timer = root.querySelector('.match-timer');
     if (timer) {
@@ -463,10 +480,19 @@
 
   // Just the verdict. No buttons — a click anywhere dismisses it.
   function renderResult() {
-    const won = Arena.state.winner === 'player';
+    const s = Arena.state;
+    const won = s.winner === 'player';
+    const sub = won
+      ? s.isBoss
+        ? `World ${s.world} cleared!  +${s.coinsWon} 🪙 & a pack`
+        : `Level ${s.level} cleared  ·  +${s.coinsWon} 🪙  ·  next: Lv ${s.level + 1}`
+      : `Fell at Level ${s.level}  ·  the climb resets to Lv 1`;
     return `
       <div class="overlay overlay-dismiss">
-        <div class="verdict ${won ? 'verdict-win' : 'verdict-lose'}">${won ? 'VICTORY' : 'DEFEAT'}</div>
+        <div class="verdict-wrap">
+          <div class="verdict ${won ? 'verdict-win' : 'verdict-lose'}">${won ? 'VICTORY' : 'DEFEAT'}</div>
+          <div class="verdict-sub">${esc(sub)}</div>
+        </div>
       </div>`;
   }
 
@@ -586,7 +612,8 @@
   // Called when the player clicks away the VICTORY/DEFEAT card.
   function dismissVerdict() {
     closePopup();
-    if (Arena.state.winner === 'player' && !Arena.state.packAwarded) {
+    // packs now only drop from bosses (state.awardPack); normal wins pay coins
+    if (Arena.state.winner === 'player' && Arena.state.awardPack && !Arena.state.packAwarded) {
       Arena.state.packAwarded = true;
       packState = 'closed';
       showPopup(renderPackClosed());
@@ -790,6 +817,16 @@
       root.innerHTML = renderLoadError(result.problems.join(' · '));
       return;
     }
+
+    // Bosses are optional overrides — a missing bosses.csv just means every
+    // boss is formula-generated, so tolerate a failed fetch.
+    try {
+      const bres = await fetch(`bosses.csv?v=${Date.now()}`, { cache: 'no-store' });
+      if (bres.ok) Progression.loadBosses(await bres.text());
+    } catch (e) {
+      /* no bosses.csv — formula bosses only */
+    }
+
     Collection.init();
     init();
   }
