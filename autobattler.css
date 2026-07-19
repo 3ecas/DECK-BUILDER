@@ -1,0 +1,1007 @@
+/* ============================================================
+   Auto-battler — retro / old-school skin.
+   Rules: rectangles only (no border-radius), chunky 3px borders,
+   monospace type, hard shadows, a small fixed palette.
+   ============================================================ */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #000;
+  --panel: #14181f;
+  --panel-2: #1b2029;
+  --line: #3a4453;
+  --line-hot: #e8c15a;
+  --text: #e6ecf2;
+  --dim: #8a97a8;
+  --mine: #4aa3ff;
+  --theirs: #ff5a4a;
+  --gold: #e8c15a;
+  --ok: #6fdc6f;
+
+  --t1: #8a97a8;
+  --t2: #6fdc6f;
+  --t3: #4aa3ff;
+  --t4: #b57edc;
+  --t5: #e8c15a;
+  --t6: #ff9a3c;
+  --t7: #ff4a6e;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+body {
+  font-family: "Courier New", Consolas, monospace;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  position: relative;
+  flex: none;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: #000;
+  transform-origin: center center;
+  transform: scale(var(--stage-scale, 1));
+}
+
+.ab {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 22px 18px;
+  gap: 12px;
+}
+
+/* ---------- top HUD ---------- */
+.ab-top {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+.ab-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 18px;
+  background: var(--panel);
+  border: 3px solid var(--line);
+}
+
+.ab-k {
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+
+.ab-v {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.ab-stat.gold {
+  border-color: var(--gold);
+}
+
+.ab-stat.gold .ab-v {
+  color: var(--gold);
+}
+
+/* the two players' life plates, front and centre of the top bar */
+.ab-players {
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 20px;
+  background: var(--panel);
+  border: 3px solid var(--line);
+}
+
+.pl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pl-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.pl-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pl-name {
+  font-size: 0.68rem;
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+
+.pl-bar {
+  width: 130px;
+  height: 10px;
+  background: #000;
+  border: 2px solid var(--line);
+}
+
+.pl-fill {
+  height: 100%;
+  width: 100%;
+  transition: width 0.4s ease;
+}
+
+.pl-you .pl-fill {
+  background: var(--ok);
+}
+
+.pl-foe .pl-fill {
+  background: var(--theirs);
+}
+
+.pl-hp {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.pl-vs {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+
+.ab-phase {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding: 8px 28px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 5px;
+  background: var(--panel);
+  border: 3px solid var(--line);
+}
+
+.phase-battle {
+  border-color: var(--theirs);
+  color: var(--theirs);
+}
+
+.phase-result {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* ---------- middle: benches + board ---------- */
+.ab-mid {
+  position: relative; /* anchors the round banner */
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden; /* the board must never spill into the HUD or shop */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+}
+
+/* bench: one compact straight line under the board */
+.ab-benchrow {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+.ab-benchlabel {
+  font-size: 0.78rem;
+  letter-spacing: 3px;
+  color: var(--dim);
+}
+
+.ab-bench {
+  display: flex;
+  gap: 6px;
+}
+
+.bench-slot {
+  width: 58px;
+  height: 58px;
+  background: var(--panel);
+  border: 3px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.bench-slot.filled {
+  cursor: grab;
+  background: var(--panel-2);
+}
+
+.bench-em {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.bench-star {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.62rem;
+  color: var(--gold);
+  letter-spacing: -1px;
+}
+
+/* the shop doubles as the sell zone while you drag one of your units */
+.ab-shopwrap {
+  position: relative;
+  align-self: flex-end;
+}
+
+/* right column: gold readout on top, reroll/play block under it */
+.ab-ctrlcol {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ab-goldbox {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 14px;
+  background: var(--panel);
+  border: 3px solid var(--gold);
+}
+
+.ab-goldbox .ab-k {
+  font-size: 0.7rem;
+}
+
+.ab-goldbox .ab-v {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+/* little roster button hovering above the deck hand's left edge */
+.ab-unitsbtn {
+  position: absolute;
+  top: -36px;
+  left: 0;
+  padding: 5px 14px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  cursor: pointer;
+}
+
+.ab-unitsbtn:hover {
+  border-color: var(--line-hot);
+}
+
+/* the all-units popup */
+.ab-unitsmodal {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.72);
+  align-items: center;
+  justify-content: center;
+}
+
+.ab-unitsmodal.show {
+  display: flex;
+}
+
+.ab-unitswin {
+  width: 560px;
+  max-height: 82%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 3px solid var(--line);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.5);
+}
+
+.uw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  border-bottom: 3px solid var(--line);
+}
+
+.uw-close {
+  padding: 2px 10px;
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  cursor: pointer;
+}
+
+.uw-close:hover {
+  border-color: var(--theirs);
+  color: var(--theirs);
+}
+
+.uw-body {
+  overflow-y: auto;
+  padding: 10px 14px 14px;
+}
+
+.uw-tier {
+  margin: 12px 0 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+
+.uw-tier:first-child {
+  margin-top: 0;
+}
+
+.uw-tier.tier-1 .uw-tiertag { color: var(--t1); }
+.uw-tier.tier-2 .uw-tiertag { color: var(--t2); }
+.uw-tier.tier-3 .uw-tiertag { color: var(--t3); }
+.uw-tier.tier-4 .uw-tiertag { color: var(--t4); }
+.uw-tier.tier-5 .uw-tiertag { color: var(--t5); }
+
+.uw-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
+  font-size: 0.9rem;
+}
+
+.uw-em {
+  width: 28px;
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+.uw-name {
+  flex: 1;
+  font-weight: 700;
+}
+
+.uw-stats {
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+
+.uw-ability {
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--gold);
+}
+
+/* healing number popup — green and rising, mirrors the damage one */
+.hit.heal {
+  fill: #6fdc6f;
+}
+
+/* padlock inside the reroll button — toggles the shop lock, not a reroll */
+.lock-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 1rem;
+  line-height: 1;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  cursor: pointer;
+}
+
+.lock-btn:hover {
+  border-color: var(--line-hot);
+}
+
+.lock-btn.locked {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.ab-sellover {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: 10px;
+  color: var(--theirs);
+  background: rgba(20, 6, 6, 0.96);
+  border: 4px dashed var(--theirs);
+}
+
+.ab-shopwrap.selling .ab-sellover {
+  display: flex;
+}
+
+.ab-shopwrap.sell-hot .ab-sellover {
+  background: rgba(255, 90, 74, 0.28);
+  border-style: solid;
+  color: #fff;
+}
+
+.ab-sellover .ab-hint {
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+
+/* ---------- unit inspector (top right) ---------- */
+.ab-info {
+  display: none;
+  position: absolute;
+  top: 96px;
+  right: 22px;
+  z-index: 45;
+  width: 292px;
+  background: var(--panel);
+  border: 3px solid var(--line);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.5);
+}
+
+.ab-info.show {
+  display: block;
+}
+
+.ab-info.team-enemy {
+  border-color: var(--theirs);
+}
+
+.ab-info.team-player {
+  border-color: var(--mine);
+}
+
+.info-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 6px;
+}
+
+.info-em {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.info-name {
+  flex: 1;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.info-star {
+  color: var(--gold);
+  font-size: 0.95rem;
+  letter-spacing: -1px;
+}
+
+.info-sub {
+  padding: 0 12px 8px;
+  font-size: 0.74rem;
+  letter-spacing: 1px;
+  color: var(--dim);
+  border-bottom: 3px solid var(--line);
+}
+
+.info-body {
+  padding: 8px 12px 10px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 0.9rem;
+}
+
+.info-k {
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+
+.info-v {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* the unit you're inspecting gets a ring on the board */
+.unit.picked .unit-body {
+  stroke: var(--line-hot);
+  stroke-width: 4;
+}
+
+/* ---------- round banner ---------- */
+.ab-banner {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 42%;
+  text-align: center;
+  font-size: 5rem;
+  font-weight: 700;
+  letter-spacing: 12px;
+  pointer-events: none;
+  z-index: 40;
+  text-shadow: 0 0 24px #000, 0 6px 0 #000;
+}
+
+.ab-banner.show {
+  display: block;
+  animation: banner-in 0.35s ease-out;
+}
+
+.banner-win { color: var(--ok); }
+.banner-lose { color: var(--theirs); }
+.banner-draw { color: var(--gold); }
+
+@keyframes banner-in {
+  from { opacity: 0; transform: scale(0.75); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ---------- board ---------- */
+.ab-boardwrap {
+  background: none;
+  padding: 6px;
+  line-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.ab-board {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.hex {
+  fill: #10151c;
+  stroke: none;
+}
+
+.hex-mine {
+  fill: #101c28;
+  stroke: none;
+}
+
+.hex-theirs {
+  fill: #1e1113;
+  stroke: none;
+}
+
+.hex-hot {
+  fill: #2b3a1c;
+  stroke: var(--line-hot);
+  stroke-width: 2;
+}
+
+.unit-body {
+  stroke-width: 2;
+}
+
+.team-player .unit-body {
+  fill: #16324d;
+  stroke: var(--mine);
+}
+
+.team-enemy .unit-body {
+  fill: #4d1c18;
+  stroke: var(--theirs);
+}
+
+.unit-em {
+  pointer-events: none;
+}
+
+.hp-bg {
+  fill: #000;
+  stroke: #000;
+}
+
+.team-player .hp-fill {
+  fill: var(--ok);
+}
+
+.team-enemy .hp-fill {
+  fill: var(--theirs);
+}
+
+.hit {
+  fill: #fff;
+  font-weight: 700;
+  font-family: "Courier New", monospace;
+  animation: hit-rise 0.6s ease-out forwards;
+  pointer-events: none;
+}
+
+/* ---------- attack effects ---------- */
+
+/* archer & co: an arrow flying along its (already rotated) +X axis */
+.proj {
+  fill: #ffe9a8;
+  stroke: #8a6b1f;
+  stroke-width: 1;
+  pointer-events: none;
+  animation: proj-fly 0.22s linear forwards;
+}
+
+@keyframes proj-fly {
+  from { transform: translateX(0); opacity: 1; }
+  90% { opacity: 1; }
+  to { transform: translateX(var(--dist, 40px)); opacity: 0; }
+}
+
+/* melee: a sword arc swept across the target */
+.slash {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 4;
+  stroke-linecap: round;
+  pointer-events: none;
+  transform-origin: 0 0;
+  animation: slash-swing 0.26s ease-out forwards;
+}
+
+@keyframes slash-swing {
+  from { transform: rotate(-55deg); opacity: 0; stroke-width: 6; }
+  35% { opacity: 1; }
+  to { transform: rotate(55deg); opacity: 0; stroke-width: 2; }
+}
+
+/* shield deflect flare */
+.shieldfx {
+  fill: none;
+  stroke: #6fd0ff;
+  stroke-width: 4;
+  pointer-events: none;
+  transform-origin: 0 0;
+  animation: shield-pop 0.42s ease-out forwards;
+}
+
+@keyframes shield-pop {
+  from { opacity: 0; transform: scale(0.65); }
+  30% { opacity: 1; transform: scale(1.08); }
+  to { opacity: 0; transform: scale(1.25); }
+}
+
+.blocked {
+  fill: #6fd0ff;
+  font-weight: 700;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+  animation: hit-rise 0.42s ease-out forwards;
+}
+
+@keyframes hit-rise {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-18px); }
+}
+
+/* ---------- bottom: shop + controls ---------- */
+.ab-bottom {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 16px;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+.ab-shop {
+  display: flex;
+  gap: 12px;
+}
+
+/* this card is the third copy — buying it evolves your unit */
+.shop-slot.evolves {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(232, 193, 90, 0.55);
+}
+
+.shop-slot {
+  width: 148px;
+  height: 132px;
+  background: var(--panel);
+  border: 3px solid var(--line);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.shop-slot.empty {
+  background: #0d1015;
+  border-style: dashed;
+  cursor: default;
+}
+
+.shop-slot.poor {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.shop-slot:not(.empty):not(.poor):hover {
+  border-color: var(--line-hot);
+}
+
+.slot-top {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.slot-cost {
+  color: var(--gold);
+}
+
+.slot-em {
+  font-size: 2.4rem;
+  line-height: 1.1;
+}
+
+.slot-name {
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.slot-stats {
+  font-size: 0.72rem;
+  color: var(--dim);
+}
+
+/* ---------- unit animations ---------- */
+.unit {
+  transform-box: fill-box;
+}
+
+/* pop in when deployed */
+.unit.spawn .unit-body,
+.unit.spawn .unit-em {
+  animation: unit-pop 0.28s ease-out;
+}
+
+@keyframes unit-pop {
+  from { opacity: 0; transform: scale(0.4); }
+  60% { transform: scale(1.15); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* white flash when struck */
+.unit.struck .unit-body {
+  fill: #fff;
+  stroke: #fff;
+}
+
+/* fade + shrink on death */
+.unit.dying {
+  animation: unit-die 0.3s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes unit-die {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.unit.dying .unit-body {
+  animation: unit-die-shrink 0.3s ease-in forwards;
+}
+
+@keyframes unit-die-shrink {
+  from { transform: scale(1) rotate(0deg); }
+  to { transform: scale(0.25) rotate(35deg); }
+}
+
+/* star pips on board units */
+.unit-star {
+  fill: var(--gold);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.star-2 .unit-body { stroke-width: 3; }
+.star-3 .unit-body { stroke-width: 4; }
+.bench-slot.star-2 { border-color: var(--gold); }
+.bench-slot.star-3 { border-color: #fff; }
+
+/* tier accents */
+.tier-1 { border-color: var(--t1); }
+.tier-2 { border-color: var(--t2); }
+.tier-3 { border-color: var(--t3); }
+.tier-4 { border-color: var(--t4); }
+.tier-5 { border-color: var(--t5); }
+.tier-6 { border-color: var(--t6); }
+.tier-7 { border-color: var(--t7); }
+.tier-1 .slot-tier { color: var(--t1); }
+.tier-2 .slot-tier { color: var(--t2); }
+.tier-3 .slot-tier { color: var(--t3); }
+.tier-4 .slot-tier { color: var(--t4); }
+.tier-5 .slot-tier { color: var(--t5); }
+.tier-6 .slot-tier { color: var(--t6); }
+.tier-7 .slot-tier { color: var(--t7); }
+
+/* squared section, same height as the deck hand: reroll on top, play below */
+.ab-controls {
+  height: 132px; /* matches .shop-slot height */
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 3px solid var(--line);
+  overflow: hidden;
+}
+
+.ctrl-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ctrl-row + .ctrl-row {
+  border-top: 2px solid var(--line);
+}
+
+.ab-controls .ab-btn {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  justify-content: center;
+  gap: 12px;
+}
+
+.ab-controls .ab-btn:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+
+.ab-btn.off {
+  opacity: 0.35;
+}
+
+.ab-btn.off .lock-btn {
+  opacity: 1; /* the padlock stays usable even when a reroll can't be afforded */
+}
+
+.ab-btn {
+  min-width: 190px;
+  padding: 12px 18px;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 3px solid var(--line);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ab-btn:hover:not(:disabled) {
+  border-color: var(--line-hot);
+}
+
+.ab-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ab-cost {
+  color: var(--gold);
+}
+
+.ab-play {
+  justify-content: center;
+  border-color: var(--ok);
+  color: var(--ok);
+  font-size: 1.3rem;
+}
+
+.ab-btn.hidden {
+  display: none;
+}
+
+/* ---------- drag ghost ---------- */
+.ab-ghost {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 500;
+  font-size: 2.6rem;
+  filter: drop-shadow(0 4px 6px #000);
+}
+
+/* ---------- load error ---------- */
+.ab-error {
+  margin: auto;
+  max-width: 720px;
+  padding: 32px;
+  background: var(--panel);
+  border: 3px solid var(--theirs);
+}
+
+.ab-error h1 {
+  color: var(--theirs);
+  margin-bottom: 12px;
+  letter-spacing: 2px;
+}
+
+.ab-error p {
+  color: var(--dim);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}

@@ -3,19 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Deck Builder</title>
-    <link rel="stylesheet" href="styles.css" />
+    <title>Auto-Battler</title>
+    <link rel="stylesheet" href="autobattler.css" />
   </head>
   <body>
     <main id="app"></main>
-    <!-- Lane-battler prototype. The old turn-based game still lives in
-         js/cards.js, js/enemies.js, js/game.js, js/ui.js, js/main.js (not loaded). -->
-    <script src="js/config.js"></script>
-    <script src="js/effects.js"></script>
-    <script src="js/units.js"></script>
-    <script src="js/collection.js"></script>
-    <script src="js/progression.js"></script>
-    <script src="js/arena.js"></script>
-    <script src="js/arena-ui.js"></script>
+    <!-- Hex auto-battler. The previous lane battler is still on disk
+         (js/arena*.js, js/collection.js, js/progression.js, styles.css) and the
+         older turn-based game before that (js/cards.js, js/game.js, js/ui.js) —
+         neither is loaded. -->
+    <script src="js/ab-units.js"></script>
+    <script src="js/hex.js"></script>
+    <script src="js/ab-game.js"></script>
+    <script src="js/ab-ui.js"></script>
   </body>
 </html>
