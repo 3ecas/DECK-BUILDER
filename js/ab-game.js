@@ -30,13 +30,15 @@
     baseIncome: 4,
     interestCap: 3, // max gold earned from interest (1 per 10 banked)
     winStreakBonus: 1,
+    aiIncomeRamp: 0.5, // extra AI gold per round per stage past 1 (PvE difficulty ramp)
     playerMaxHp: 500, // each player's life total
     roundLossHp: 8, // life lost by whoever loses a stage-1 round...
     roundLossHpPerStage: 6, // ...growing by this much per stage (stage 10 = 62)
     projectileSpeed: 9, // hexes per second an arrow/bolt travels
     lungeTime: 0.28, // how long the attack lunge animation lasts
-    battleTimeout: 90, // safety net: melee units can block each other into a
-    // stalemate, and there is no manual "next round" button to escape it
+    battleTimeout: 150, // safety net: melee units can block each other into a
+    // stalemate, and there is no manual "next round" button to escape it.
+    // Generous because doubled hp pools make honest fights run long too.
   };
 
   // Shop odds by player LEVEL (= stage): chance (%) of each tier 1..5.
@@ -234,8 +236,8 @@
   /* ---------------- traits (comp bonuses) ---------------- */
 
   // Registry of comp bonuses. `animal` is the pilot: 2+ distinct animals on
-  // the board make every animal's hits BLEED the victim (a cut of its max hp
-  // per second); all 4 also make every animal attack 25% faster.
+  // the board make every animal attack 25% faster; the full pack of 4 ALSO
+  // makes their hits BLEED the victim (a cut of its max hp per second).
   const TRAITS = {
     animal: {
       name: 'Animals',
@@ -243,14 +245,28 @@
       breakpoints: [2, 4],
       // one description per breakpoint, shown in the hover tooltip
       descs: [
-        'Animal attacks tear a wound: victims bleed 1.5% of their max hp per second for 3s (refreshed on hit).',
-        'The full pack hunts: bleeding, plus every animal attacks 25% faster.',
+        'The pack stirs: every animal attacks 25% faster.',
+        'The full pack hunts: haste, plus animal attacks tear a wound — victims bleed 1.5% of their max hp per second for 3s (refreshed on hit).',
+      ],
+    },
+    // Archer / Hunter / Sniper / Eagle (Eagle is animal AND marksman). Wakes
+    // at 2 distinct marksmen and grows with every extra one: +10% damage per
+    // marksman fielded — 2 = +20%, 3 = +30%, the full squad of 4 = +40%.
+    marksman: {
+      name: 'Marksmen',
+      icon: '🎯',
+      breakpoints: [2, 3, 4],
+      descs: [
+        'Eyes on target: marksmen deal +20% damage.',
+        'Coordinated volleys: marksmen deal +30% damage.',
+        'The full firing line: marksmen deal +40% damage.',
       ],
     },
   };
   const BLEED_RATE = 0.015; // 1.5% of max hp per second
   const BLEED_TIME = 3; // seconds, refreshed on every animal hit
-  const PACK_HASTE = 0.75; // attack interval multiplier for the full animal pack
+  const PACK_HASTE = 0.75; // attack interval multiplier once the pack (2+) is active
+  const MARKSMAN_DMG = 0.1; // damage bonus per marksman fielded once the comp (2+) is live
 
   const hasTrait = (u, t) => (u.traits || []).includes(t);
 
@@ -615,7 +631,7 @@
        2. VALUE    — every decision runs on power-per-slot (powerOf): hp +
           sustained dps, doubled per star, halved for 2-slot units.
        3. TRAITS   — animal units are worth more when it already owns other
-          distinct animals (aiValue), so it completes the bleed/pack comp.
+          distinct animals (aiValue), so it completes the haste/bleed comp.
        4. MERGES   — always finishes a triple; only starts collecting a pair
           when the merged unit would clearly upgrade its board; max 2 projects
           at once. Obeys the ★3 race lock: once locked out of a unit's ★3 it
@@ -626,26 +642,33 @@
      ================================================ */
 
   // Raw board power a unit delivers per slot it occupies: hp plus sustained
-  // damage output, doubled per star by statsOf, split across its slots.
+  // damage output, doubled per star by statsOf, split across its slots. The
+  // dps horizon (8s) tracks the doubled hp pools — if hp changes scale again,
+  // rescale it or the AI drifts toward all-tank / all-glass boards.
   const powerOf = (id, star) => {
     const s = statsOf(id, star);
     if (!s) return 0;
-    return (s.maxHp + s.dmg * s.atkSpeed * 4) / (s.slots || 1);
+    return (s.maxHp + s.dmg * s.atkSpeed * 8) / (s.slots || 1);
   };
   const rosterScore = (r) => powerOf(r.id, r.star);
 
   // What a unit is worth TO THE AI's comp: raw power, boosted when it's an
   // animal and the roster already holds other distinct animals — each extra
-  // pack member is +15%, so it actively completes the bleed/haste comp.
+  // pack member is +15%, so it actively completes the haste/bleed comp.
   function aiValue(id, star) {
     let v = powerOf(id, star);
     const s = statsOf(id, 1);
-    if (s && s.traits.includes('animal')) {
+    if (!s) return v;
+    // Comp synergy, for EVERY registered trait: each distinct roster-mate
+    // sharing a trait adds 15%, so the AI completes whatever comp it's on —
+    // animals, marksmen, and anything added to TRAITS later.
+    s.traits.forEach((trait) => {
+      if (!TRAITS[trait]) return;
       const others = new Set(
-        state.enemyRoster.filter((r) => r.id !== id && hasTrait(statsOf(r.id, 1), 'animal')).map((r) => r.id)
+        state.enemyRoster.filter((r) => r.id !== id && hasTrait(statsOf(r.id, 1), trait)).map((r) => r.id)
       ).size;
       v *= 1 + 0.15 * others;
-    }
+    });
     return v;
   }
 
@@ -678,14 +701,29 @@
   }
 
   function aiShop() {
-    state.enemyGold += CONFIG.baseIncome + Math.min(CONFIG.interestCap, Math.floor(state.enemyGold / 10));
+    const stage = stageInfo().stage;
+    // Same streak bonus the player gets (state.streak mirrors both sides: the
+    // AI is on a run whenever the player is on a slide, and vice versa) plus a
+    // small PvE ramp — +1 gold per two stages — so the AI stays a threat into
+    // the late game instead of falling ever further behind a winning player.
+    const streakBonus = Math.abs(state.streak) >= 2 ? CONFIG.winStreakBonus : 0;
+    const ramp = Math.floor((stage - 1) * CONFIG.aiIncomeRamp);
+    state.enemyGold +=
+      CONFIG.baseIncome + streakBonus + ramp + Math.min(CONFIG.interestCap, Math.floor(state.enemyGold / 10));
 
     // a handful of looks at the shop per round, like a human would get —
-    // 12 rolls a round had the AI outgearing the player by the first real fight
+    // 12 rolls a round had the AI outgearing the player by the first real
+    // fight. It shops harder as the stages climb: 4 looks early, 5 from
+    // stage 4, 6 from stage 7.
+    const maxRolls = stage >= 7 ? 6 : stage >= 4 ? 5 : 4;
     let rolls = 0;
-    while (rolls < 4) {
+    while (rolls < maxRolls) {
       rolls += 1;
-      const offer = Array.from({ length: CONFIG.shopSlots }, () => rollUnit(state.level));
+      // Spend on the BEST units first: the offer is considered in value order,
+      // not slot order, so gold always chases the strongest thing available.
+      const offer = Array.from({ length: CONFIG.shopSlots }, () => rollUnit(state.level)).sort(
+        (a, b) => aiValue(b, 1) - aiValue(a, 1)
+      );
       for (const id of offer) {
         const s = statsOf(id, 1);
         if (!s || state.enemyGold < s.cost) continue;
@@ -738,15 +776,20 @@
           continue;
         }
         // 4. Straight upgrade: a fresh unit whose ★1 power beats the weakest
-        //    fielded piece — sell that piece (if it's an uninvested ★1) and
-        //    field the better one. This is the steady tier-1 → tier-5 drift.
+        //    fielded piece — sell that piece and field the better one. This is
+        //    the steady tier-1 → tier-5 drift, and it knows late game wants
+        //    expensive units: even a merged ★2 gets sold (at its 3x refund)
+        //    when a newcomer CLEARLY outclasses it, so the board never stays
+        //    glued to stage-2 merges. Only a ★3 is forever. An uninvested ★1
+        //    goes cheaply (1.1x bar); ditching a ★2 needs a 1.35x case. Pieces
+        //    with roster-mates of the same id are live merge projects — kept.
         if (
           weakest &&
-          weakest.star === 1 &&
+          weakest.star < CONFIG.maxStar &&
           roster.filter((r) => r.id === weakest.id).length === 1 &&
-          aiValue(id, 1) > weakestP * 1.2
+          aiValue(id, 1) > weakestP * (weakest.star === 1 ? 1.1 : 1.35)
         ) {
-          state.enemyGold += statsOf(weakest.id, 1).cost - s.cost;
+          state.enemyGold += statsOf(weakest.id, 1).cost * Math.pow(3, weakest.star - 1) - s.cost;
           state.enemyRoster = roster.filter((r) => r !== weakest);
           state.enemyRoster.push({ id, star: 1, col: null, row: null });
         }
@@ -896,10 +939,11 @@
       u.vy = null;
     });
     // trait bonuses are locked in from the comp on the board at the bell
-    state.traitLvl = {
-      player: { animal: traitLevel('player', 'animal') },
-      enemy: { animal: traitLevel('enemy', 'animal') },
-    };
+    state.traitLvl = { player: {}, enemy: {} };
+    Object.keys(TRAITS).forEach((t) => {
+      state.traitLvl.player[t] = traitLevel('player', t);
+      state.traitLvl.enemy[t] = traitLevel('enemy', t);
+    });
     state.projectiles = [];
     state.result = null;
     state.battleTime = 0;
@@ -1045,20 +1089,27 @@
         if (u.atkTimer <= 0) {
           // each unit swings at its OWN speed (atk_speed in units.csv), with a
           // little slop so the armies never settle into one coordinated beat.
-          // A full animal pack (gold comp) swings 25% faster, permanently.
+          // An active pack (2+ animals) swings 25% faster; only the FULL pack
+          // of 4 makes the hits bleed.
           const packLvl =
             state.traitLvl && hasTrait(u, 'animal') ? state.traitLvl[u.team].animal : 0;
           u.atkTimer =
-            u.atkInterval * (0.85 + Math.random() * 0.3) * (packLvl >= 2 ? PACK_HASTE : 1);
+            u.atkInterval * (0.85 + Math.random() * 0.3) * (packLvl >= 1 ? PACK_HASTE : 1);
           u.lungeT = CONFIG.lungeTime;
           u.lungeTo = { col: target.col, row: target.row };
 
-          const bleeds = packLvl >= 1;
+          const bleeds = packLvl >= 2;
+          // Marksman comp: +10% damage per marksman fielded (traitLevel is
+          // count-1, so lvl 1 = 2 marksmen = +20%, lvl 3 = full squad = +40%).
+          const markLvl =
+            state.traitLvl && hasTrait(u, 'marksman') ? state.traitLvl[u.team].marksman : 0;
+          const swingDmg =
+            markLvl >= 1 ? Math.round(u.dmg * (1 + MARKSMAN_DMG * (markLvl + 1))) : u.dmg;
           if (u.range > 1) {
             // ranged: loose an arrow — the damage only lands when it arrives
             state.projectiles.push({
               targetUid: target.uid,
-              dmg: u.dmg,
+              dmg: swingDmg,
               t: bestD / CONFIG.projectileSpeed,
               bleeds,
             });
@@ -1075,8 +1126,8 @@
             // melee: already at the target's hex, damage is immediate.
             // The shield eats a flat chunk, but a hit always lands for at
             // least 1 so nothing can become unkillable.
-            const blocked = Math.min(target.shield || 0, Math.max(0, u.dmg - 1));
-            const dealt = Math.max(1, u.dmg - blocked);
+            const blocked = Math.min(target.shield || 0, Math.max(0, swingDmg - 1));
+            const dealt = Math.max(1, swingDmg - blocked);
             target.hp = Math.max(0, target.hp - dealt);
             state.hits.push({
               fromCol: u.col,
