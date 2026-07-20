@@ -238,35 +238,77 @@
   // Registry of comp bonuses. `animal` is the pilot: 2+ distinct animals on
   // the board make every animal attack 25% faster; the full pack of 4 ALSO
   // makes their hits BLEED the victim (a cut of its max hp per second).
+  // Every comp bonus lives here. `at` holds the effect magnitude for each
+  // breakpoint (index 0 = first breakpoint). Effects are applied in two ways:
+  //   - stat traits (frontline hp, marn stats) are baked into a unit's maxHp/
+  //     dmg at battle start by applyTraitBuffs()
+  //   - live traits (animal, enlighted, darkarts, scavenger) act in tick()
   const TRAITS = {
     animal: {
       name: 'Animals',
       icon: '🐾',
       breakpoints: [2, 4],
-      // one description per breakpoint, shown in the hover tooltip
+      haste: [0.75, 0.75], // attack-interval multiplier (lower = faster)
+      bleedFrom: 2, // breakpoint index (1-based) at which bleed turns on
       descs: [
         'The pack stirs: every animal attacks 25% faster.',
-        'The full pack hunts: haste, plus animal attacks tear a wound — victims bleed 1.5% of their max hp per second for 3s (refreshed on hit).',
+        'The full pack hunts: haste, plus animal attacks make foes bleed 1.5% of max hp per second for 3s.',
       ],
     },
-    // Archer / Hunter / Sniper / Eagle (Eagle is animal AND marksman). Wakes
-    // at 2 distinct marksmen and grows with every extra one: +10% damage per
-    // marksman fielded — 2 = +20%, 3 = +30%, the full squad of 4 = +40%.
-    marksman: {
-      name: 'Marksmen',
-      icon: '🎯',
-      breakpoints: [2, 3, 4],
+    frontline: {
+      name: 'Frontline',
+      icon: '🛡️',
+      breakpoints: [2, 4],
+      hpPct: [0.25, 0.6], // +HP to frontline units
+      descs: ['Frontline units gain +25% HP.', 'Frontline units gain +60% HP.'],
+    },
+    enlighted: {
+      name: 'Enlighted',
+      icon: '✨',
+      breakpoints: [2, 3],
+      healCount: [1, 3], // how many wounded allies get healed each pulse
+      healPct: 0.1, // % of max hp restored per pulse
+      healEvery: 3, // seconds between pulses
       descs: [
-        'Eyes on target: marksmen deal +20% damage.',
-        'Coordinated volleys: marksmen deal +30% damage.',
-        'The full firing line: marksmen deal +40% damage.',
+        'Every 3s, heal the most-wounded ally for 10% of its max HP.',
+        'Every 3s, heal the 3 most-wounded allies for 10% of their max HP.',
+      ],
+    },
+    darkarts: {
+      name: 'Dark Arts',
+      icon: '🔮',
+      breakpoints: [2, 4],
+      bonus: [0.25, 0.55], // bonus magic damage as a fraction of the attack
+      descs: [
+        'Dark Arts units deal +25% bonus magic damage on every hit.',
+        'Dark Arts units deal +55% bonus magic damage on every hit.',
+      ],
+    },
+    marn: {
+      name: 'Marn Elite',
+      icon: '⚜️',
+      breakpoints: [2, 4, 6],
+      statPct: [0.15, 0.35, 0.65], // +HP AND +damage to Marn units
+      descs: [
+        'Marn Elite units gain +15% HP and damage.',
+        'Marn Elite units gain +35% HP and damage.',
+        'Marn Elite units gain +65% HP and damage.',
+      ],
+    },
+    scavenger: {
+      name: 'Scavengers',
+      icon: '🩸',
+      breakpoints: [2, 3],
+      killHaste: [0.7, 0.55], // attack-interval multiplier after a takedown
+      descs: [
+        'On a takedown: lunge to the next foe and attack 30% faster for 5s (no stack).',
+        'On a takedown: lunge to the next foe and attack 45% faster for 5s (no stack).',
       ],
     },
   };
   const BLEED_RATE = 0.015; // 1.5% of max hp per second
-  const BLEED_TIME = 3; // seconds, refreshed on every animal hit
-  const PACK_HASTE = 0.75; // attack interval multiplier once the pack (2+) is active
-  const MARKSMAN_DMG = 0.1; // damage bonus per marksman fielded once the comp (2+) is live
+  const BLEED_TIME = 3; // seconds, refreshed on every animal hit (does NOT stack)
+  const SCAV_TIME = 5; // seconds a scavenger keeps its post-kill haste
 
   const hasTrait = (u, t) => (u.traits || []).includes(t);
 
@@ -279,7 +321,7 @@
     return ids.size;
   }
 
-  // 0 = inactive, 1 = first breakpoint (bleed), 2 = full comp (bleed+frenzy)
+  // 0 = inactive, otherwise the 1-based breakpoint tier the team has reached.
   function traitLevel(team, trait) {
     const bp = TRAITS[trait].breakpoints;
     const n = traitCount(team, trait);
@@ -288,6 +330,33 @@
       if (n >= b) lvl = i + 1;
     });
     return lvl;
+  }
+
+  // Active breakpoint tier of a trait for THIS unit's team, but 0 if the unit
+  // doesn't carry the trait. Reads the snapshot locked in at battle start.
+  function unitTraitLvl(u, trait) {
+    if (!state.traitLvl || !hasTrait(u, trait)) return 0;
+    return state.traitLvl[u.team][trait] || 0;
+  }
+
+  // Bake stat traits (Frontline HP, Marn Elite stats) into a unit's maxHp/dmg
+  // for this battle, starting from its untouched base values. Called once at
+  // the bell after the trait snapshot is taken.
+  function applyTraitBuffs() {
+    state.units.forEach((u) => {
+      let hpMult = 1;
+      let dmgMult = 1;
+      const fl = unitTraitLvl(u, 'frontline');
+      if (fl) hpMult += TRAITS.frontline.hpPct[fl - 1];
+      const mn = unitTraitLvl(u, 'marn');
+      if (mn) {
+        hpMult += TRAITS.marn.statPct[mn - 1];
+        dmgMult += TRAITS.marn.statPct[mn - 1];
+      }
+      u.maxHp = Math.round(u.baseMaxHp * hpMult);
+      u.dmg = Math.round(u.baseDmg * dmgMult);
+      u.hp = u.maxHp;
+    });
   }
 
   // Rounds left in the current stage (a level-up comes with each new stage).
@@ -525,11 +594,14 @@
       homeRow: row,
       hp: s.maxHp,
       maxHp: s.maxHp,
+      baseMaxHp: s.maxHp, // untouched base — trait buffs recompute from these
       dmg: s.dmg,
+      baseDmg: s.dmg,
       shield: s.shield,
       traits: s.traits,
       bleedT: 0, // seconds of bleed left on this unit
       bleedAcc: 0, // bled damage waiting to be shown as one popup
+      scavHasteT: 0, // scavenger post-kill haste countdown (never stacks)
       range: s.range,
       atkInterval: 1 / s.atkSpeed, // seconds between this unit's attacks
       moveSpeed: s.moveSpeed,
@@ -929,6 +1001,7 @@
       u.hp = u.maxHp;
       u.bleedT = 0;
       u.bleedAcc = 0;
+      u.scavHasteT = 0;
       // everyone starts partway through their own swing, so the opening (and
       // every later exchange) isn't one perfectly synchronised volley
       u.atkTimer = u.atkInterval * (0.4 + Math.random() * 0.6);
@@ -944,6 +1017,9 @@
       state.traitLvl.player[t] = traitLevel('player', t);
       state.traitLvl.enemy[t] = traitLevel('enemy', t);
     });
+    // bake the stat comps (Frontline hp, Marn Elite stats) into the fighters
+    applyTraitBuffs();
+    state.healPulseT = TRAITS.enlighted.healEvery; // enlighted heal cadence
     state.projectiles = [];
     state.result = null;
     state.battleTime = 0;
@@ -1252,7 +1328,11 @@
     state.units.forEach((u) => {
       u.col = u.homeCol;
       u.row = u.homeRow;
+      // shed battle-only trait buffs — prep shows base stats again
+      u.maxHp = u.baseMaxHp || u.maxHp;
+      u.dmg = u.baseDmg || u.dmg;
       u.hp = u.maxHp;
+      u.scavHasteT = 0;
       u.atkTimer = 0;
       u.moveTimer = 0;
       u.targetUid = null;

@@ -1,41 +1,45 @@
-id,name,emoji,tier,cost,hp,dmg,range,atk_speed,move_speed,color,shield,slots,traits
+﻿id,name,emoji,tier,cost,hp,dmg,range,atk_speed,move_speed,color,shield,slots,traits
 # atk_speed = attacks per second (higher = faster; 0.5 = one hit every 2s).
 # shield = flat damage deflected from every incoming hit (never below 1 damage).
 # slots = board slots the unit occupies (Titan takes 2). Default 1.
 # traits = comp bonuses (semicolon-separated). Units are PURE STATS — any
-#   special behaviour comes from comp traits, not individual units.
-#   ANIMAL: 2+ distinct animals on board = animals attack 25% faster; all 4 =
-#   haste plus attacks make foes bleed a % of max hp per second.
-#   MARKSMAN (archer/hunter/sniper/eagle): from 2 distinct marksmen on board,
-#   marksmen deal +10% damage PER marksman fielded (2=+20%, 3=+30%, 4=+40%).
+#   special behaviour comes from comp traits, not individual units. See the
+#   TRAITS registry in ab-game.js for exact numbers.
+#   ANIMAL (snake/bear/eagle/lion): 2+ = animals attack faster; 4 = also bleed.
+#   MARKSMAN (archer/hunter/sniper/eagle): marksmen gain +attack %.
+#   FRONTLINE (monk/bear/juggernaut/titan): +HP% to frontline units.
+#   ENLIGHTED (priest/monk/valkyrie): periodically heals wounded allies.
+#   DARKARTS (priest/knight/mage/archmage): bonus magic damage on attack.
+#   MARN (archer/guard/knight/captain/golem/warden/warlord): +stats at 2/4/6.
+#   SCAVENGER (scout/hunter/lion): on a kill, lunge to the next foe + haste 5s.
 # Power curve: tier-1 baseline ~500 hp; tier +30% per step; ranged pay ~15%;
 #   tanks sit above the line, glass cannons below; a star doubles hp AND dmg.
 # ---- TIER 1 (1 gold) ----
 soldier,Soldier,🪖,1,1,520,28,1,0.7,2.5,blue,0,1,
-archer,Archer,🏹,1,1,400,30,4,0.5,2.5,green,0,1,marksman
-guard,Guard,🛡️,1,1,760,9,1,0.5,2.2,grey,0,1,
-priest,Priest,🕊️,1,1,370,25,4,0.5,2.5,yellow,0,1,
-scout,Scout,🏃,1,1,430,35,1,0.7,3.5,red,0,1,
+archer,Archer,🏹,1,1,400,30,4,0.5,2.5,green,0,1,marn;marksman
+guard,Guard,🛡️,1,1,760,9,1,0.5,2.2,grey,0,1,marn
+priest,Priest,🕊️,1,1,370,25,4,0.5,2.5,yellow,0,1,enlighted;darkarts
+scout,Scout,🏃,1,1,430,35,1,0.7,3.5,red,0,1,scavenger
 snake,Snake,🐍,1,1,430,30,1,0.8,3,green,0,1,animal
 # ---- TIER 2 (2 gold) ----
-knight,Knight,⚔️,2,2,620,38,1,0.7,2.5,blue,0,1,
-bear,Bear,🐻,2,2,950,16,1,0.5,2.2,red,0,1,animal
-hunter,Hunter,🎯,2,2,450,38,3,0.7,2.7,green,0,1,marksman
-monk,Monk,🥋,2,2,610,18,1,1.5,2.6,yellow,0,1,
+knight,Knight,⚔️,2,2,620,38,1,0.7,2.5,blue,0,1,darkarts;marn
+bear,Bear,🐻,2,2,950,16,1,0.5,2.2,red,0,1,animal;frontline
+hunter,Hunter,🎯,2,2,450,38,3,0.7,2.7,green,0,1,scavenger;marksman
+monk,Monk,🥋,2,2,610,18,1,1.5,2.6,yellow,0,1,frontline;enlighted
 # ---- TIER 3 (3 gold) ----
-captain,Captain,🎖️,3,3,800,45,1,0.7,2.5,blue,0,1,
+captain,Captain,🎖️,3,3,800,45,1,0.7,2.5,blue,0,1,marn
 sniper,Sniper,🔭,3,3,520,55,4,0.7,2.3,green,0,1,marksman
-golem,Golem,🪨,3,3,1200,11,1,0.5,1.8,grey,4,1,
-mage,Mage,🔮,3,3,480,83,3,0.5,2.5,yellow,0,1,
+golem,Golem,🪨,3,3,1200,11,1,0.5,1.8,grey,4,1,marn
+mage,Mage,🔮,3,3,480,83,3,0.5,2.5,yellow,0,1,darkarts
 eagle,Eagle,🦅,3,3,550,50,3,0.8,2.9,green,0,1,animal;marksman
 # ---- TIER 4 (4 gold) ----
 champion,Champion,🏆,4,4,1020,55,1,0.8,2.6,red,0,1,
-juggernaut,Juggernaut,🗿,4,4,1380,41,1,0.5,1.8,blue,0,1,
-valkyrie,Valkyrie,🗡️,4,4,840,55,1,1,2.8,red,0,1,
-warden,Warden,🏰,4,4,1330,25,1,0.5,2,blue,5,1,
-lion,Lion,🦁,4,4,1000,56,1,0.8,2.7,red,0,1,animal
+juggernaut,Juggernaut,🗿,4,4,1380,41,1,0.5,1.8,blue,0,1,frontline
+valkyrie,Valkyrie,🗡️,4,4,840,55,1,1,2.8,red,0,1,enlighted
+warden,Warden,🏰,4,4,1330,25,1,0.5,2,blue,5,1,marn
+lion,Lion,🦁,4,4,1000,56,1,0.8,2.7,red,0,1,animal;scavenger
 # ---- TIER 5 (5 gold) — only appear from stage 7 ----
-warlord,Warlord,👑,5,5,940,76,1,1,2.6,red,0,1,
-archmage,Archmage,🌟,5,5,870,88,4,0.5,2.4,yellow,0,1,
-titan,Titan,🌋,5,5,2900,90,1,0.6,1.8,grey,0,2,
+warlord,Warlord,👑,5,5,940,76,1,1,2.6,red,0,1,marn
+archmage,Archmage,🌟,5,5,870,88,4,0.5,2.4,yellow,0,1,darkarts
+titan,Titan,🌋,5,5,2900,90,1,0.6,1.8,grey,0,2,frontline
 reaper,Reaper,💀,5,5,880,104,1,0.8,2.8,grey,0,1,
