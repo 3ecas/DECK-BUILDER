@@ -1,15 +1,16 @@
 // Loads units.csv — the auto-battler's unit catalogue.
 //
 // Columns: id, name, emoji, tier, cost, hp, dmg, range, atk_speed, move_speed,
-//          color, shield, ability, slots
+//          color, shield, slots, traits
 //   tier        1-7. Drives the shop odds (see ab-game.js ODDS).
 //   cost        gold to buy. Defaults to tier if blank.
 //   hp / dmg    base ★1 stats. ★2 doubles both, ★3 doubles again.
 //   range       in hexes. 1 = melee (must be adjacent), 2+ = shoots from afar.
 //   atk_speed   attacks per SECOND — 1 = one hit/s, 0.5 = one hit every 2s.
 //   move_speed  hexes per second.
-//   ability     special behaviour: "key arg1 arg2" (implemented in ab-game.js)
 //   slots       board slots the unit occupies (Titan takes 2). Default 1.
+//   traits      comp tags ("animal") — bonuses come from COMPS, units are
+//               pure stats on their own.
 //
 // Edit units.csv and reload — no code changes needed to add or retune a unit.
 (function (global) {
@@ -75,13 +76,6 @@
       if (!id) return;
       if (UNITS[id]) problems.push(`Duplicate unit id "${id}" — the later one wins.`);
       const tier = Math.max(1, Math.min(7, num(c[3], 1)));
-      // "heal_wounded 3 20" -> { key: 'heal_wounded', args: [3, 20] }
-      const abilityText = (c[12] || '').trim();
-      let ability = null;
-      if (abilityText) {
-        const parts = abilityText.split(/\s+/);
-        ability = { key: parts[0].toLowerCase(), args: parts.slice(1).map(Number) };
-      }
       const u = {
         id,
         name: c[1] || id,
@@ -95,8 +89,11 @@
         moveSpeed: Math.max(0.1, num(c[9], 2.5)),
         color: (c[10] || 'grey').toLowerCase(),
         shield: Math.max(0, num(c[11], 0)), // flat damage deflected per hit
-        ability,
-        slots: Math.max(1, num(c[13], 1)), // board slots occupied
+        slots: Math.max(1, num(c[12], 1)), // board slots occupied
+        traits: (c[13] || '')
+          .split(';')
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean), // comp-bonus tags, e.g. "animal"
       };
       UNITS[id] = u;
     });

@@ -1,22 +1,38 @@
-﻿id,name,emoji,tier,cost,hp,dmg,range,atk_speed,move_speed,color,shield,ability,slots
+﻿id,name,emoji,tier,cost,hp,dmg,range,atk_speed,move_speed,color,shield,slots,traits
 # atk_speed = attacks per second (higher = faster; 0.5 = one hit every 2s).
 # shield = flat damage deflected from every incoming hit (never below 1 damage).
-# ability = special behaviour + args (see ab-game.js). slots = board slots used.
+# slots = board slots the unit occupies (Titan takes 2). Default 1.
+# traits = comp bonuses (semicolon-separated). Units are PURE STATS — any
+#   special behaviour comes from comp traits, not individual units.
+#   ANIMAL: 2+ distinct animals on board = attacks make foes bleed for a % of
+#   max hp per second; all 4 = bleeding plus animals attack 25% faster.
+# Power curve: tier +30% per step; ranged pay ~15%; a star doubles hp AND dmg.
 # ---- TIER 1 (1 gold) ----
-soldier,Soldier,🪖,1,1,100,20,1,0.7,2.5,blue,0,,1
-archer,Archer,🏹,1,1,60,15,4,0.5,2.5,green,0,,1
-guard,Guard,🛡️,1,1,130,5,1,0.5,2.2,grey,0,,1
-priest,Priest,🕊️,1,1,50,10,4,0.5,2.5,yellow,0,heal_wounded 3 20,1
+soldier,Soldier,🪖,1,1,260,28,1,0.7,2.5,blue,0,1,
+archer,Archer,🏹,1,1,210,30,4,0.5,2.5,green,0,1,
+guard,Guard,🛡️,1,1,360,9,1,0.5,2.2,grey,0,1,
+priest,Priest,🕊️,1,1,190,25,4,0.5,2.5,yellow,0,1,
+scout,Scout,🏃,1,1,220,35,1,0.7,3.5,red,0,1,
+snake,Snake,🐍,1,1,220,30,1,0.8,3,green,0,1,animal
 # ---- TIER 2 (2 gold) ----
-knight,Knight,⚔️,2,2,110,25,1,0.7,2.5,blue,0,,1
-brute,Brute,🐻,2,2,150,10,1,0.5,2.2,red,0,,1
+knight,Knight,⚔️,2,2,310,38,1,0.7,2.5,blue,0,1,
+bear,Bear,🐻,2,2,460,16,1,0.5,2.2,red,0,1,animal
+hunter,Hunter,🎯,2,2,230,38,3,0.7,2.7,green,0,1,
+monk,Monk,🥋,2,2,310,18,1,1.5,2.6,yellow,0,1,
 # ---- TIER 3 (3 gold) ----
-captain,Captain,🎖️,3,3,120,20,1,0.7,2.5,blue,0,,1
-sniper,Sniper,🔭,3,3,80,25,4,0.7,2.3,green,0,,1
+captain,Captain,🎖️,3,3,400,45,1,0.7,2.5,blue,0,1,
+sniper,Sniper,🔭,3,3,270,55,4,0.7,2.3,green,0,1,
+golem,Golem,🪨,3,3,580,11,1,0.5,1.8,grey,4,1,
+mage,Mage,🔮,3,3,250,83,3,0.5,2.5,yellow,0,1,
+eagle,Eagle,🦅,3,3,280,50,3,0.8,2.9,green,0,1,animal
 # ---- TIER 4 (4 gold) ----
-champion,Champion,🏆,4,4,170,20,1,0.8,2.6,red,0,,1
-juggernaut,Juggernaut,🗿,4,4,200,10,1,0.5,1.8,blue,0,,1
-# ---- TIER 5 (5 gold) — only appear from round 7 ----
-warlord,Warlord,👑,5,5,125,35,1,1,2.6,red,0,engage_push 25,1
-archmage,Archmage,🌟,5,5,100,15,4,0.5,2.4,yellow,0,heal_team 5 50,1
-titan,Titan,🌋,5,5,235,20,1,0.6,1.8,grey,0,,2
+champion,Champion,🏆,4,4,510,55,1,0.8,2.6,red,0,1,
+juggernaut,Juggernaut,🗿,4,4,680,41,1,0.5,1.8,blue,0,1,
+valkyrie,Valkyrie,🗡️,4,4,420,55,1,1,2.8,red,0,1,
+warden,Warden,🏰,4,4,650,25,1,0.5,2,blue,5,1,
+lion,Lion,🦁,4,4,500,56,1,0.8,2.7,red,0,1,animal
+# ---- TIER 5 (5 gold) — only appear from stage 7 ----
+warlord,Warlord,👑,5,5,470,76,1,1,2.6,red,0,1,
+archmage,Archmage,🌟,5,5,440,88,4,0.5,2.4,yellow,0,1,
+titan,Titan,🌋,5,5,1460,90,1,0.6,1.8,grey,0,2,
+reaper,Reaper,💀,5,5,440,104,1,0.8,2.8,grey,0,1,

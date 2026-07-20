@@ -109,71 +109,76 @@ body {
   color: var(--gold);
 }
 
-/* the two players' life plates, front and centre of the top bar */
-.ab-players {
-  margin: 0 auto;
+/* the two players' life boxes — icon + hp, stacked vertically far left */
+.ab-hpcol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ab-hpbox {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 6px 20px;
+  gap: 8px;
+  padding: 6px 14px;
   background: var(--panel);
   border: 3px solid var(--line);
 }
 
-.pl {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.ab-hpbox.you {
+  border-color: var(--ok);
 }
 
-.pl-icon {
-  font-size: 1.8rem;
+.ab-hpbox.foe {
+  border-color: var(--theirs);
+}
+
+.hp-icon {
+  font-size: 1.5rem;
   line-height: 1;
 }
 
-.pl-info {
+.hp-num {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.ab-hpbox.you .hp-num { color: var(--ok); }
+.ab-hpbox.foe .hp-num { color: var(--theirs); }
+
+/* stage tracker: one cell per round of the current stage — dead centre top */
+.ab-stagebox {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 3px solid var(--line);
 }
 
-.pl-name {
-  font-size: 0.68rem;
-  letter-spacing: 2px;
-  color: var(--dim);
-}
-
-.pl-bar {
-  width: 130px;
-  height: 10px;
-  background: #000;
-  border: 2px solid var(--line);
-}
-
-.pl-fill {
-  height: 100%;
-  width: 100%;
-  transition: width 0.4s ease;
-}
-
-.pl-you .pl-fill {
-  background: var(--ok);
-}
-
-.pl-foe .pl-fill {
-  background: var(--theirs);
-}
-
-.pl-hp {
+.st-cell {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
   font-size: 0.85rem;
   font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--dim);
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  white-space: nowrap;
 }
 
-.pl-vs {
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--dim);
+.st-cell.done {
+  opacity: 0.4;
+}
+
+.st-cell.cur {
+  color: var(--text);
+  border-color: var(--line-hot);
 }
 
 .ab-phase {
@@ -281,14 +286,39 @@ body {
   gap: 8px;
 }
 
+/* gold readout — centred directly above the deck hand */
 .ab-goldbox {
+  position: absolute;
+  left: 50%;
+  bottom: 100%; /* its bottom edge sits exactly on the deck hand's top edge */
+  z-index: 5;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 16px;
+  background: var(--panel);
+  border: 3px solid var(--gold);
+}
+
+/* board capacity readout, sits with the gold box above the controls */
+.ab-unitsbox {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
   padding: 4px 14px;
   background: var(--panel);
-  border: 3px solid var(--gold);
+  border: 3px solid var(--line);
+}
+
+.ab-unitsbox .ab-v {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.ab-unitsbox .ab-v.full {
+  color: var(--theirs);
 }
 
 .ab-goldbox .ab-k {
@@ -337,7 +367,7 @@ body {
 }
 
 .ab-unitswin {
-  width: 560px;
+  width: 700px;
   max-height: 82%;
   display: flex;
   flex-direction: column;
@@ -376,57 +406,229 @@ body {
   padding: 10px 14px 14px;
 }
 
-.uw-tier {
-  margin: 12px 0 6px;
-  font-size: 0.75rem;
+.uw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.uw-table th {
+  text-align: left;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  letter-spacing: 2px;
+  color: var(--dim);
+  border-bottom: 2px solid var(--line);
+}
+
+.uw-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #1c222c;
+  vertical-align: middle;
+}
+
+.uw-tierrow td {
+  padding-top: 12px;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--dim);
+  border-bottom: none;
 }
 
-.uw-tier:first-child {
-  margin-top: 0;
-}
+.uw-tierrow.tier-1 .uw-tiertag { color: var(--t1); }
+.uw-tierrow.tier-2 .uw-tiertag { color: var(--t2); }
+.uw-tierrow.tier-3 .uw-tiertag { color: var(--t3); }
+.uw-tierrow.tier-4 .uw-tiertag { color: var(--t4); }
+.uw-tierrow.tier-5 .uw-tiertag { color: var(--t5); }
 
-.uw-tier.tier-1 .uw-tiertag { color: var(--t1); }
-.uw-tier.tier-2 .uw-tiertag { color: var(--t2); }
-.uw-tier.tier-3 .uw-tiertag { color: var(--t3); }
-.uw-tier.tier-4 .uw-tiertag { color: var(--t4); }
-.uw-tier.tier-5 .uw-tiertag { color: var(--t5); }
-
-.uw-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 2px;
-  font-size: 0.9rem;
+.uw-unit {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .uw-em {
+  display: inline-block;
   width: 28px;
   text-align: center;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
+  margin-right: 4px;
 }
 
-.uw-name {
-  flex: 1;
-  font-weight: 700;
-}
-
-.uw-stats {
-  color: var(--dim);
-  font-size: 0.8rem;
-}
-
-.uw-ability {
-  font-weight: 400;
-  font-size: 0.72rem;
+.uw-ab {
   color: var(--gold);
+  font-size: 0.74rem;
 }
 
 /* healing number popup — green and rising, mirrors the damage one */
 .hit.heal {
   fill: #6fdc6f;
+}
+
+/* armor-gain popup — cyan */
+.hit.buffed {
+  fill: #6fd0ff;
+}
+
+/* bleed drip popup — dark red, smaller than a real hit */
+.hit.bleeding {
+  fill: #d4574a;
+}
+
+/* ---------- trait / comp bonus stack (left side, TFT style) ---------- */
+.ab-traits {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trait {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 3px solid var(--line);
+  cursor: default;
+}
+
+.trait-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.trait-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.trait-count {
+  margin-left: auto;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* hover tooltip with the full comp rundown */
+.trait-tip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 60;
+  width: 270px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 3px solid var(--line);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.5);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.trait:hover .trait-tip {
+  display: block;
+}
+
+.tip-head {
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 4px;
+}
+
+/* the comp's member units — lit when that unit is on your board */
+.tip-units {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0 8px;
+}
+
+.tip-unit {
+  font-size: 1.25rem;
+  line-height: 1;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.tip-unit.on {
+  opacity: 1;
+  filter: none;
+}
+
+.tip-row {
+  color: var(--dim);
+  padding: 3px 0;
+}
+
+.tip-row.on {
+  color: var(--text);
+}
+
+.tip-row.on b {
+  color: var(--gold);
+}
+
+.trait.grey {
+  opacity: 0.55;
+}
+
+.trait.silver {
+  border-color: #b7c4d4;
+}
+
+.trait.silver .trait-count {
+  color: #b7c4d4;
+}
+
+.trait.gold {
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(232, 193, 90, 0.45);
+}
+
+.trait.gold .trait-count {
+  color: var(--gold);
+}
+
+/* thin blue mana bar under the hp bar */
+.mana-bg {
+  fill: #000;
+  stroke: #000;
+}
+
+.mana-fill {
+  fill: #4aa3ff;
+}
+
+/* green hex glow under a freshly-healed unit — a clear opacity pulse */
+.healfx-fill {
+  fill: #6fdc6f;
+  stroke: none;
+  pointer-events: none;
+  animation: heal-fill 0.9s ease-out forwards;
+}
+
+.healfx {
+  fill: none;
+  stroke: #6fdc6f;
+  stroke-width: 4;
+  pointer-events: none;
+  animation: heal-fill 0.9s ease-out forwards;
+}
+
+@keyframes heal-fill {
+  0% { opacity: 0; }
+  20% { opacity: 0.65; }
+  45% { opacity: 0.25; }
+  65% { opacity: 0.55; }
+  100% { opacity: 0; }
 }
 
 /* padlock inside the reroll button — toggles the shop lock, not a reroll */
@@ -617,19 +819,17 @@ body {
   max-height: 100%;
 }
 
+/* the grid is invisible until you're actually holding a unit — and even then
+   only YOUR deploy hexes light up, softly; enemy ground stays dark */
 .hex {
-  fill: #10151c;
+  fill: transparent;
   stroke: none;
 }
 
-.hex-mine {
-  fill: #101c28;
-  stroke: none;
-}
-
-.hex-theirs {
-  fill: #1e1113;
-  stroke: none;
+.ab-board.dragging .hex-mine {
+  fill: transparent;
+  stroke: rgba(74, 163, 255, 0.45);
+  stroke-width: 1.5;
 }
 
 .hex-hot {
@@ -744,6 +944,7 @@ body {
 .ab-bottom {
   position: relative;
   z-index: 50;
+  margin-top: 26px; /* headroom so the gold box doesn't overlap the bench */
   display: flex;
   align-items: stretch;
   justify-content: center;

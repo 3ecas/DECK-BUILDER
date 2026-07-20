@@ -56,34 +56,18 @@
     return `
       <div class="ab">
         <div class="ab-top">
-          <div class="ab-stat"><span class="ab-k">ROUND</span><span class="ab-v round-v"></span></div>
-          <div class="ab-stat"><span class="ab-k">LEVEL</span><span class="ab-v level-v"></span></div>
-          <div class="ab-stat"><span class="ab-k">UNITS</span><span class="ab-v units-v"></span></div>
-          <div class="ab-players">
-            <div class="pl pl-you">
-              <span class="pl-icon">🧍</span>
-              <div class="pl-info">
-                <span class="pl-name">YOU</span>
-                <div class="pl-bar"><div class="pl-fill you-hpfill"></div></div>
-                <span class="pl-hp you-hp"></span>
-              </div>
-            </div>
-            <span class="pl-vs">VS</span>
-            <div class="pl pl-foe">
-              <span class="pl-icon">🤖</span>
-              <div class="pl-info">
-                <span class="pl-name">ENEMY</span>
-                <div class="pl-bar"><div class="pl-fill foe-hpfill"></div></div>
-                <span class="pl-hp foe-hp"></span>
-              </div>
-            </div>
+          <div class="ab-hpcol">
+            <div class="ab-hpbox you"><span class="hp-icon">🧍</span><span class="hp-num you-hp"></span></div>
+            <div class="ab-hpbox foe"><span class="hp-icon">🤖</span><span class="hp-num foe-hp"></span></div>
           </div>
+          <div class="ab-stagebox stage-box"></div>
           <div class="ab-phase phase-v"></div>
         </div>
 
         <div class="ab-info"></div>
 
         <div class="ab-mid">
+          <div class="ab-traits"></div>
           <div class="ab-boardwrap"></div>
           <div class="ab-banner"></div>
         </div>
@@ -100,13 +84,14 @@
         </div>
 
         <div class="ab-bottom">
+          <div class="ab-goldbox"><span class="ab-k">GOLD</span><span class="ab-v gold gold-v"></span></div>
           <div class="ab-shopwrap">
             <button class="ab-unitsbtn units-btn" title="See every unit in the game">UNITS</button>
             <div class="ab-shop"></div>
             <div class="ab-sellover"><span>SELL</span><span class="ab-hint">drop a unit here</span></div>
           </div>
           <div class="ab-ctrlcol">
-            <div class="ab-goldbox"><span class="ab-k">GOLD</span><span class="ab-v gold gold-v"></span></div>
+            <div class="ab-unitsbox"><span class="ab-k">UNITS</span><span class="ab-v units-v"></span></div>
             <div class="ab-controls">
               <button class="ab-btn reroll-btn ctrl-row">
                 <span class="lock-btn" title="Lock the shop so it doesn't reroll next round">🔓</span>
@@ -303,18 +288,29 @@
     setTimeout(() => g.remove(), 300);
   }
 
+  // A green hex glow under a unit that just got healed.
+  function spawnHealHex(fx, at) {
+    const g = svgEl('g', { transform: `translate(${at.x},${at.y})` });
+    g.appendChild(svgEl('polygon', { class: 'healfx-fill', points: Hex.corners(0, 0, hexSize * 0.92) }));
+    g.appendChild(svgEl('polygon', { class: 'healfx', points: Hex.corners(0, 0, hexSize * 0.95) }));
+    fx.appendChild(g);
+    setTimeout(() => g.remove(), 920);
+  }
+
   // A hex ring that flares on a unit whose shield ate part of the hit.
   function spawnShield(fx, at, blocked) {
     const g = svgEl('g', { transform: `translate(${at.x},${at.y})` });
     g.appendChild(svgEl('polygon', { class: 'shieldfx', points: Hex.corners(0, 0, hexSize * 0.95) }));
-    const t = svgEl('text', {
-      class: 'blocked',
-      y: hexSize * 0.05,
-      'text-anchor': 'middle',
-      'font-size': Math.max(8, hexSize * 0.34),
-    });
-    t.textContent = `-${blocked}`;
-    g.appendChild(t);
+    if (blocked > 0) {
+      const t = svgEl('text', {
+        class: 'blocked',
+        y: hexSize * 0.05,
+        'text-anchor': 'middle',
+        'font-size': Math.max(8, hexSize * 0.34),
+      });
+      t.textContent = `-${blocked}`;
+      g.appendChild(t);
+    }
     fx.appendChild(g);
     setTimeout(() => g.remove(), 420);
   }
@@ -338,14 +334,18 @@
       if (h.blocked > 0) spawnShield(fx, to, h.blocked);
 
       const heal = h.fx === 'heal';
+      const buff = h.fx === 'buff';
+      const bleed = h.fx === 'bleed';
+      if (heal) spawnHealHex(fx, to);
+      if (buff) spawnShield(fx, to, 0); // cyan flare, the text below tells the story
       const t = svgEl('text', {
-        class: heal ? 'hit heal' : 'hit',
+        class: heal ? 'hit heal' : buff ? 'hit buffed' : bleed ? 'hit bleeding' : 'hit',
         x: to.x,
         y: to.y - hexSize * 0.6,
         'text-anchor': 'middle',
-        'font-size': Math.max(10, hexSize * 0.55),
+        'font-size': bleed ? Math.max(8, hexSize * 0.4) : Math.max(10, hexSize * 0.55),
       });
-      t.textContent = heal ? `+${h.amount}` : `-${h.amount}`;
+      t.textContent = heal ? `+${h.amount}` : buff ? `+${h.amount}🛡` : `-${h.amount}`;
       fx.appendChild(t);
       setTimeout(() => t.remove(), 600);
 
@@ -393,16 +393,26 @@
   function syncHud() {
     const s = AB.state;
     const q = (sel) => root.querySelector(sel);
-    // warm-up minion rounds show as M1..M3; the real count starts after them
-    q('.round-v').textContent = AB.enemyRound() > 0 ? AB.enemyRound() : `M${s.round}`;
-    q('.level-v').textContent = s.level;
+    // the stage tracker: one cell per round of the current stage (1-1, 1-2…),
+    // with an icon for what each round is — ⚔ pvp, 👾 minions, 👹 boss
+    const si = AB.stageInfo();
+    let cells = '';
+    if (si.def.rounds === Infinity) {
+      cells = `<span class="st-cell cur">10-${si.sub} ∞</span>`;
+    } else {
+      for (let i = 1; i <= si.def.rounds; i++) {
+        const w = si.def.waves && si.def.waves[i];
+        const icon = w ? (w.boss ? '👹' : '👾') : '⚔';
+        const cls = i < si.sub ? 'done' : i === si.sub ? 'cur' : '';
+        cells += `<span class="st-cell ${cls}">${si.stage}-${i} ${icon}</span>`;
+      }
+    }
+    q('.stage-box').innerHTML = cells;
     q('.units-v').textContent = `${AB.boardCount()}/${AB.maxBoardUnits()}`;
     q('.units-v').classList.toggle('full', AB.boardFull());
     q('.gold-v').textContent = s.gold;
     q('.you-hp').textContent = s.playerHp;
     q('.foe-hp').textContent = s.enemyHp;
-    q('.you-hpfill').style.width = `${(s.playerHp / CFG.playerMaxHp) * 100}%`;
-    q('.foe-hpfill').style.width = `${(s.enemyHp / CFG.playerMaxHp) * 100}%`;
     q('.phase-v').textContent =
       s.phase === 'prep' ? 'PREPARE' : s.phase === 'battle' ? 'BATTLE' : String(s.result || '').toUpperCase();
     q('.phase-v').className = `ab-phase phase-v phase-${s.phase}`;
@@ -418,6 +428,49 @@
     lockBtn.classList.toggle('locked', !!s.shopLocked);
   }
 
+  // TFT-style trait stack: icon + count per comp. Grey = present but off,
+  // silver = first breakpoint live, gold = full comp.
+  function syncTraits() {
+    const el = root.querySelector('.ab-traits');
+    let html = '';
+    Object.keys(AB.TRAITS).forEach((key) => {
+      const t = AB.TRAITS[key];
+      const n = AB.traitCount('player', key);
+      if (!n) return;
+      const lvl = AB.traitLevel('player', key);
+      const rank = lvl >= 2 ? 'gold' : lvl >= 1 ? 'silver' : 'grey';
+      const tipRows = t.breakpoints
+        .map((bp, i) => {
+          const on = n >= bp;
+          return `<div class="tip-row ${on ? 'on' : ''}"><b>(${bp})</b> ${t.descs ? t.descs[i] : ''}</div>`;
+        })
+        .join('');
+      // every member of the comp, with the ones on your board lit up
+      const fielded = new Set(
+        AB.state.units.filter((u) => u.team === 'player').map((u) => u.id)
+      );
+      const members = ABUnits.ALL_IDS.filter((id) => (ABUnits.get(id).traits || []).includes(key))
+        .sort((a, b) => ABUnits.get(a).tier - ABUnits.get(b).tier)
+        .map((id) => {
+          const m = ABUnits.get(id);
+          return `<span class="tip-unit ${fielded.has(id) ? 'on' : ''}" title="${esc(m.name)}">${m.emoji}</span>`;
+        })
+        .join('');
+      html += `
+        <div class="trait ${rank}">
+          <span class="trait-icon">${t.icon}</span>
+          <span class="trait-name">${t.name}</span>
+          <span class="trait-count">${n}</span>
+          <div class="trait-tip">
+            <div class="tip-head">${t.icon} ${t.name.toUpperCase()} — ${n} on board</div>
+            <div class="tip-units">${members}</div>
+            ${tipRows}
+          </div>
+        </div>`;
+    });
+    el.innerHTML = html;
+  }
+
   function syncShop() {
     root.querySelector('.ab-shop').innerHTML = AB.state.shop.map(shopCardHtml).join('');
   }
@@ -430,6 +483,7 @@
     syncHud();
     syncShop();
     syncBench();
+    syncTraits();
     syncUnits(0);
     syncInfo();
   }
@@ -444,7 +498,15 @@
     if (selected.kind === 'board') {
       const u = AB.state.units.find((x) => x.uid === selected.uid);
       if (!u) return null;
-      const s = AB.statsOf(u.id, u.star);
+      // overlay the LIVE unit's numbers — PvE waves override hp/dmg/speed on
+      // the spawned unit (a stage-3 boss has 400hp, not the 700 base)
+      const s = Object.assign({}, AB.statsOf(u.id, u.star), {
+        maxHp: u.maxHp,
+        dmg: u.dmg,
+        shield: u.shield,
+        range: u.range,
+        atkSpeed: Math.round((1 / u.atkInterval) * 100) / 100,
+      });
       return { s, hp: u.hp, team: u.team, col: u.col, row: u.row, onField: true };
     }
     if (selected.kind === 'bench') {
@@ -457,16 +519,6 @@
     if (!ABUnits.get(id)) return null;
     const s = AB.statsOf(id, 1);
     return { s, hp: s.maxHp, team: 'player', onField: false, where: 'SHOP' };
-  }
-
-  // Human-readable one-liner for a unit's special ability.
-  function abilityText(a) {
-    if (!a) return '';
-    const [x, y] = a.args;
-    if (a.key === 'heal_wounded') return `heals weakest ${y}hp / ${x} atks`;
-    if (a.key === 'heal_team') return `heals team ${y}hp / ${x} atks`;
-    if (a.key === 'engage_push') return `shove + ${x}% hp on engage`;
-    return a.key;
   }
 
   function row(k, v) {
@@ -504,10 +556,31 @@
         ${row('RANGE', s.range > 1 ? `${s.range} hex` : 'melee')}
         ${row('MOVE', `${s.moveSpeed} hex/s`)}
         ${s.slots > 1 ? row('SLOTS', s.slots) : ''}
-        ${s.ability ? row('ABILITY', abilityText(s.ability)) : ''}
+        ${s.traits && s.traits.length ? row('TRAIT', s.traits.join(', ')) : ''}
         ${d.onField ? row('CELL', `${d.col}, ${d.row}`) : ''}
       </div>`;
   }
+
+  // What unit-ish thing sits under the pointer? (hover inspector)
+  function hoverTarget(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    const shopSlot = el.closest('[data-shop]');
+    if (shopSlot && !shopSlot.classList.contains('empty')) {
+      const i = Number(shopSlot.dataset.shop);
+      if (AB.state.shop[i]) return { kind: 'shop', shopIndex: i, id: AB.state.shop[i] };
+    }
+    const benchSlot = el.closest('.bench-slot.filled');
+    if (benchSlot) return { kind: 'bench', uid: Number(benchSlot.dataset.uid) };
+    const cell = cellFromPointer(x, y);
+    if (cell) {
+      const u = AB.unitAt(cell.col, cell.row);
+      if (u) return { kind: 'board', uid: u.uid };
+    }
+    return null;
+  }
+
+  const selKey = (s) => (s ? `${s.kind}:${s.uid || ''}:${s.shopIndex ?? ''}:${s.id || ''}` : '');
 
   // Figure out what sits under the pointer and select it.
   function selectAt(x, y) {
@@ -543,25 +616,35 @@
   function openUnitsList() {
     const modal = root.querySelector('.ab-unitsmodal');
     const body = modal.querySelector('.uw-body');
-    let html = '';
+    let html = `
+      <table class="uw-table">
+        <thead>
+          <tr><th>UNIT</th><th>HP</th><th>ATTACK</th><th>SPEED</th><th>TYPE</th><th>NOTES</th></tr>
+        </thead>
+        <tbody>`;
     for (let tier = 1; tier <= CFG.maxTier; tier++) {
       const ids = ABUnits.ALL_IDS.filter((id) => ABUnits.get(id).tier === tier);
       if (!ids.length) continue;
-      html += `<div class="uw-tier tier-${tier}"><span class="uw-tiertag">TIER ${tier}</span> · ${tier}g</div>`;
+      html += `<tr class="uw-tierrow tier-${tier}"><td colspan="6"><span class="uw-tiertag">TIER ${tier}</span> · ${tier}g</td></tr>`;
       ids.forEach((id) => {
         const s = AB.statsOf(id, 1);
-        const rng = s.range > 1 ? `rng ${s.range}` : 'melee';
-        const shd = s.shield ? ` · 🛡${s.shield}` : '';
-        const slots = s.slots > 1 ? ` · takes ${s.slots} slots` : '';
-        const ab = s.ability ? `<div class="uw-ability">${abilityText(s.ability)}</div>` : '';
+        const type = s.range > 1 ? `ranged ${s.range}` : 'melee';
+        const extras = [];
+        if (s.traits && s.traits.length) extras.push(`🐾 ${s.traits.join('/')}`);
+        if (s.shield) extras.push(`🛡 blocks ${s.shield}`);
+        if (s.slots > 1) extras.push(`takes ${s.slots} slots`);
         html += `
-          <div class="uw-row">
-            <span class="uw-em">${s.emoji}</span>
-            <span class="uw-name">${esc(s.name)}${ab}</span>
-            <span class="uw-stats">${s.maxHp}hp · ${s.dmg}atk · ${s.atkSpeed}/s · ${rng}${shd}${slots}</span>
-          </div>`;
+          <tr>
+            <td class="uw-unit"><span class="uw-em">${s.emoji}</span>${esc(s.name)}</td>
+            <td>${s.maxHp}</td>
+            <td>${s.dmg}</td>
+            <td>${s.atkSpeed}/s</td>
+            <td>${type}</td>
+            <td class="uw-ab">${extras.length ? extras.join(' · ') : '—'}</td>
+          </tr>`;
       });
     }
+    html += '</tbody></table>';
     body.innerHTML = html;
     modal.classList.add('show');
   }
@@ -648,6 +731,12 @@
     ghost.textContent = s.emoji;
     root.appendChild(ghost);
     drag = Object.assign({ ghost }, opts);
+    svg.classList.add('dragging'); // the hex grid only shows while holding a unit
+    // the ghost IS the unit while dragging — no shadow left on its old hex
+    if (opts.kind === 'board') {
+      const el = unitEls.get(opts.uid);
+      if (el) el.style.display = 'none';
+    }
     // dragging one of YOUR units turns the whole shop into a sell zone
     if (opts.kind !== 'shop') root.querySelector('.ab-shopwrap').classList.add('selling');
     moveDrag(x, y);
@@ -675,6 +764,11 @@
     if (!drag) return;
     const d = drag;
     d.ghost.remove();
+    svg.classList.remove('dragging');
+    if (d.kind === 'board') {
+      const el = unitEls.get(d.uid);
+      if (el) el.style.display = '';
+    }
     root.querySelectorAll('.hex-hot').forEach((h) => h.classList.remove('hex-hot'));
     const wrap = root.querySelector('.ab-shopwrap');
     wrap.classList.remove('selling', 'sell-hot');
@@ -774,7 +868,17 @@
     });
 
     document.addEventListener('pointermove', (e) => {
-      if (drag) moveDrag(e.clientX, e.clientY);
+      if (drag) {
+        moveDrag(e.clientX, e.clientY);
+        return;
+      }
+      // hovering any unit (shop, bench, board — either team) opens its card
+      const hov = hoverTarget(e.clientX, e.clientY);
+      if (selKey(hov) !== selKey(selected)) {
+        selected = hov;
+        syncInfo();
+        syncUnits(0); // update the gold "picked" ring
+      }
     });
     document.addEventListener('pointerup', (e) => {
       const moved = press ? Math.hypot(e.clientX - press.x, e.clientY - press.y) : Infinity;
