@@ -8,8 +8,13 @@
 
   const STAGE_W = 1920;
   const STAGE_H = 1080;
-  const BOARD_MAX_H = 660;
-  const BOARD_MAX_W = 1700;
+  const BOARD_MAX_H = 640; // .ab-mid's real available height (measured, not guessed)
+  // The board is now TRUE-centered in .ab-mid (traits/info are pinned side
+  // overlays, no longer flex siblings), so the binding constraint is twice
+  // the smaller of the two side margins — the 292px info panel on the right
+  // is wider than the 190px traits panel on the left, so it's the tighter
+  // bound. Padded well under that so the centered board can never reach it.
+  const BOARD_MAX_W = 1280;
   const BANNER_MS = 3000; // how long the win/lose banner stays up
 
   let root;
@@ -64,11 +69,10 @@
           <div class="ab-phase phase-v"></div>
         </div>
 
-        <div class="ab-info"></div>
-
         <div class="ab-mid">
           <div class="ab-traits"></div>
           <div class="ab-boardwrap"></div>
+          <div class="ab-info"></div>
           <div class="ab-banner"></div>
         </div>
 
@@ -83,10 +87,20 @@
           </div>
         </div>
 
+        <div class="ab-synergymodal">
+          <div class="ab-unitswin">
+            <div class="uw-head"><span>ALL SYNERGIES</span><button class="uw-close">✕</button></div>
+            <div class="uw-body syn-body"></div>
+          </div>
+        </div>
+
         <div class="ab-bottom">
           <div class="ab-goldbox"><span class="ab-k">GOLD</span><span class="ab-v gold gold-v"></span></div>
           <div class="ab-shopwrap">
-            <button class="ab-unitsbtn units-btn" title="See every unit in the game">UNITS</button>
+            <div class="ab-refbtns">
+              <button class="ab-unitsbtn units-btn" title="See every unit in the game">UNITS</button>
+              <button class="ab-unitsbtn syn-btn" title="See every comp synergy in the game">SYNERGIES</button>
+            </div>
             <div class="ab-shop"></div>
             <div class="ab-sellover"><span>SELL</span><span class="ab-hint">drop a unit here</span></div>
           </div>
@@ -155,18 +169,20 @@
     const em = document.createElementNS(SVGNS, 'text');
     em.setAttribute('class', 'unit-em');
     em.setAttribute('text-anchor', 'middle');
-    em.setAttribute('y', hexSize * 0.18);
-    em.setAttribute('font-size', hexSize * 0.95);
+    em.setAttribute('y', hexSize * 0.2);
+    em.setAttribute('font-size', hexSize * 0.7); // smaller icon, clear of the hp bar above it
     em.textContent = s.emoji;
     g.appendChild(em);
 
-    const barW = hexSize * 1.3;
-    const barH = Math.max(3, hexSize * 0.16);
+    // smaller bar, pulled further up so it sits above the hex instead of
+    // cutting across the (now smaller) icon
+    const barW = hexSize * 1.0;
+    const barH = Math.max(2, hexSize * 0.12);
     ['hp-bg', 'hp-fill'].forEach((cls) => {
       const r = document.createElementNS(SVGNS, 'rect');
       r.setAttribute('class', cls);
       r.setAttribute('x', -barW / 2);
-      r.setAttribute('y', -hexSize * 0.95);
+      r.setAttribute('y', -hexSize * 1.08);
       r.setAttribute('width', barW);
       r.setAttribute('height', barH);
       g.appendChild(r);
@@ -235,7 +251,7 @@
       }
 
       el.setAttribute('transform', `translate(${(u.vx + ox).toFixed(2)},${(u.vy + oy).toFixed(2)})`);
-      el.querySelector('.hp-fill').setAttribute('width', hexSize * 1.3 * Math.max(0, u.hp / u.maxHp));
+      el.querySelector('.hp-fill').setAttribute('width', hexSize * 1.0 * Math.max(0, u.hp / u.maxHp));
       el.classList.toggle('picked', !!selected && selected.kind === 'board' && selected.uid === u.uid);
     });
 
@@ -438,7 +454,9 @@
       const n = AB.traitCount('player', key);
       if (!n) return;
       const lvl = AB.traitLevel('player', key);
-      const rank = lvl >= 2 ? 'gold' : lvl >= 1 ? 'silver' : 'grey';
+      // gold only at the comp's TOP breakpoint — some comps have 2 tiers,
+      // others (Marn Elite, Marksman) have 3, so this can't be a fixed number
+      const rank = lvl >= t.breakpoints.length ? 'gold' : lvl >= 1 ? 'silver' : 'grey';
       const tipRows = t.breakpoints
         .map((bp, i) => {
           const on = n >= bp;
@@ -645,6 +663,40 @@
       });
     }
     html += '</tbody></table>';
+    body.innerHTML = html;
+    modal.classList.add('show');
+  }
+
+  /* ---------------- synergies list popup ---------------- */
+
+  function openSynergyList() {
+    const modal = root.querySelector('.ab-synergymodal');
+    const body = modal.querySelector('.syn-body');
+    let html = '';
+    Object.keys(AB.TRAITS).forEach((key) => {
+      const t = AB.TRAITS[key];
+      const members = ABUnits.ALL_IDS.filter((id) => (ABUnits.get(id).traits || []).includes(key)).sort(
+        (a, b) => ABUnits.get(a).tier - ABUnits.get(b).tier
+      );
+      const memberHtml = members
+        .map((id) => {
+          const m = ABUnits.get(id);
+          return `<span class="tip-unit on" title="${esc(m.name)}">${m.emoji}</span>`;
+        })
+        .join('');
+      const rows = t.breakpoints
+        .map((bp, i) => `<tr><td class="syn-bp">${bp}</td><td>${t.descs ? t.descs[i] : ''}</td></tr>`)
+        .join('');
+      html += `
+        <div class="syn-card">
+          <div class="syn-head"><span class="syn-icon">${t.icon}</span><span class="syn-name">${t.name}</span></div>
+          <div class="syn-members">${memberHtml}</div>
+          <table class="syn-table">
+            <thead><tr><th>UNITS</th><th>EFFECT</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    });
     body.innerHTML = html;
     modal.classList.add('show');
   }
@@ -899,8 +951,17 @@
         openUnitsList();
         return;
       }
-      if (e.target.closest('.uw-close') || e.target.classList.contains('ab-unitsmodal')) {
-        root.querySelector('.ab-unitsmodal').classList.remove('show');
+      if (e.target.closest('.syn-btn')) {
+        openSynergyList();
+        return;
+      }
+      const closeModal = e.target.closest('.uw-close');
+      if (closeModal) {
+        closeModal.closest('.ab-unitsmodal, .ab-synergymodal').classList.remove('show');
+        return;
+      }
+      if (e.target.classList.contains('ab-unitsmodal') || e.target.classList.contains('ab-synergymodal')) {
+        e.target.classList.remove('show');
         return;
       }
       // the padlock lives inside the reroll button, so it must win the check

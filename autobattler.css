@@ -332,10 +332,15 @@ body {
 }
 
 /* little roster button hovering above the deck hand's left edge */
-.ab-unitsbtn {
+.ab-refbtns {
   position: absolute;
   top: -36px;
   left: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.ab-unitsbtn {
   padding: 5px 14px;
   font-family: inherit;
   font-size: 0.78rem;
@@ -351,8 +356,9 @@ body {
   border-color: var(--line-hot);
 }
 
-/* the all-units popup */
-.ab-unitsmodal {
+/* the all-units / all-synergies popups */
+.ab-unitsmodal,
+.ab-synergymodal {
   display: none;
   position: absolute;
   inset: 0;
@@ -362,7 +368,8 @@ body {
   justify-content: center;
 }
 
-.ab-unitsmodal.show {
+.ab-unitsmodal.show,
+.ab-synergymodal.show {
   display: flex;
 }
 
@@ -460,6 +467,66 @@ body {
   font-size: 0.74rem;
 }
 
+/* all-synergies popup: one card per comp */
+.syn-card {
+  padding: 12px 0;
+  border-bottom: 2px solid var(--line);
+}
+
+.syn-card:last-child {
+  border-bottom: none;
+}
+
+.syn-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.syn-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.syn-name {
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 1px;
+}
+
+.syn-members {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.syn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.syn-table th {
+  text-align: left;
+  padding: 3px 8px;
+  font-size: 0.66rem;
+  letter-spacing: 2px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.syn-table td {
+  padding: 4px 8px;
+  vertical-align: top;
+}
+
+.syn-bp {
+  color: var(--gold);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 /* healing number popup — green and rising, mirrors the damage one */
 .hit.heal {
   fill: #6fdc6f;
@@ -476,12 +543,17 @@ body {
 }
 
 /* ---------- trait / comp bonus stack (left side, TFT style) ---------- */
+/* vertically centered on the screen (middle of the arena), left edge on the
+   same guideline as the HP boxes above in .ab-top — BOARD_MAX_W already
+   leaves enough side margin that this can never land on top of a hex even
+   though it's no longer a flex sibling */
 .ab-traits {
   position: absolute;
-  left: 14px;
   top: 50%;
+  left: 0;
   transform: translateY(-50%);
   z-index: 30;
+  width: 190px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -688,11 +760,18 @@ body {
 }
 
 /* ---------- unit inspector (top right) ---------- */
+/* pinned to the right edge, vertically centered, out of the flex flow —
+   so .ab-boardwrap is the ONLY flowing child of .ab-mid and centers on the
+   true middle of the screen instead of splitting the difference with this
+   panel's reserved space. `visibility` (not `display`) keeps this from ever
+   affecting layout even while hidden, and BOARD_MAX_W leaves enough margin
+   that the centered board can never land under it either way. */
 .ab-info {
-  display: none;
+  visibility: hidden;
   position: absolute;
-  top: 96px;
-  right: 22px;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
   z-index: 45;
   width: 292px;
   background: var(--panel);
@@ -701,7 +780,7 @@ body {
 }
 
 .ab-info.show {
-  display: block;
+  visibility: visible;
 }
 
 .ab-info.team-enemy {
@@ -824,6 +903,18 @@ body {
 .hex {
   fill: transparent;
   stroke: none;
+}
+
+/* your deploy zone always shows a faint outline so you can see it at a
+   glance; dragging a unit brightens it considerably */
+.hex-mine {
+  stroke: rgba(74, 163, 255, 0.14);
+  stroke-width: 1;
+}
+
+.hex-theirs {
+  stroke: rgba(255, 90, 74, 0.14);
+  stroke-width: 1;
 }
 
 .ab-board.dragging .hex-mine {

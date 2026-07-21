@@ -16,10 +16,10 @@
   const U = global.ABUnits;
 
   const CONFIG = {
-    cols: 9,
-    rows: 8, // 4 rows per side, fewer/bigger hexes
+    cols: 10,
+    rows: 8, // 4 rows per side
     deployRows: 4,
-    benchSlots: 9,
+    benchSlots: 12,
     shopSlots: 5,
     maxTier: 5,
     tierUnlockStage: { 4: 6, 5: 7 }, // hard gates: no T4 before stage 6, no T5 before stage 7
@@ -207,11 +207,17 @@
     slots: 1,
   };
 
+  // Stars used to double hp+dmg per level (★3 = 4x ★1) — a freshly-merged
+  // ★3 tier-1 unit could rival units many tiers above it, which made an
+  // early ★3 feel unbeatable. This is a gentle climb instead: each star is
+  // "a little bit better", not a different unit entirely.
+  const STAR_MULT = [1, 1.35, 1.8];
+
   function statsOf(id, star) {
     const u = id === MINION.id ? MINION : id === MINION_BOSS.id ? MINION_BOSS : U.get(id);
     if (!u) return null;
     const s = Math.max(1, Math.min(CONFIG.maxStar, star || 1));
-    const mult = Math.pow(2, s - 1); // ★2 doubles, ★3 doubles again
+    const mult = STAR_MULT[s - 1];
     return {
       id,
       name: u.name,
@@ -235,14 +241,15 @@
 
   /* ---------------- traits (comp bonuses) ---------------- */
 
-  // Registry of comp bonuses. `animal` is the pilot: 2+ distinct animals on
-  // the board make every animal attack 25% faster; the full pack of 4 ALSO
-  // makes their hits BLEED the victim (a cut of its max hp per second).
-  // Every comp bonus lives here. `at` holds the effect magnitude for each
-  // breakpoint (index 0 = first breakpoint). Effects are applied in two ways:
-  //   - stat traits (frontline hp, marn stats) are baked into a unit's maxHp/
-  //     dmg at battle start by applyTraitBuffs()
-  //   - live traits (animal, enlighted, darkarts, scavenger) act in tick()
+  // Registry of every comp bonus in the game. Each entry's array fields hold
+  // the effect magnitude per breakpoint (index 0 = first breakpoint reached).
+  // Effects are applied in two ways:
+  //   - STAT traits (frontline hp%, marn hp%+dmg%) are baked into a unit's
+  //     maxHp/dmg once at battle start by applyTraitBuffs()
+  //   - LIVE traits act every tick: animal (attack-speed pack haste + bleed
+  //     stacks once full), marksman/darkarts (bonus dmg folded into swings),
+  //     enlighted (periodic team heal pulse), scavenger (post-kill haste +
+  //     lunge). See unitTraitLvl() for reading a unit's active breakpoint.
   const TRAITS = {
     animal: {
       name: 'Animals',
@@ -252,7 +259,18 @@
       bleedFrom: 2, // breakpoint index (1-based) at which bleed turns on
       descs: [
         'The pack stirs: every animal attacks 25% faster.',
-        'The full pack hunts: haste, plus animal attacks make foes bleed 1.5% of max hp per second for 3s.',
+        'The full pack hunts: haste, plus animal attacks make foes bleed 1.5% of max hp per second for 3s (refreshed by every bite, doesn\'t stack).',
+      ],
+    },
+    marksman: {
+      name: 'Marksman',
+      icon: '🎯',
+      breakpoints: [2, 3, 4],
+      dmgPct: [0.2, 0.3, 0.4], // bonus attack damage
+      descs: [
+        'Marksmen deal +20% attack damage.',
+        'Marksmen deal +30% attack damage.',
+        'Marksmen deal +40% attack damage.',
       ],
     },
     frontline: {
@@ -305,10 +323,42 @@
         'On a takedown: lunge to the next foe and attack 45% faster for 5s (no stack).',
       ],
     },
+    guardian: {
+      name: 'Guardians',
+      icon: '🔰',
+      breakpoints: [2, 4],
+      shieldAdd: [40, 100], // flat bonus shield, baked in like a stat trait
+      descs: [
+        'Guardians gain +40 shield (flat damage reduction per hit).',
+        'Guardians gain +100 shield (flat damage reduction per hit).',
+      ],
+    },
+    berserker: {
+      name: 'Berserkers',
+      icon: '💢',
+      breakpoints: [2, 3],
+      maxBonus: [0.3, 0.5], // bonus dmg %, ramping up as the berserker loses hp
+      descs: [
+        'Berserkers deal up to +30% bonus damage, scaling up as their HP drops below half.',
+        'Berserkers deal up to +50% bonus damage, scaling up as their HP drops below half.',
+      ],
+    },
+    assassin: {
+      name: 'Assassins',
+      icon: '🥷',
+      breakpoints: [2, 3],
+      bonus: [0.4, 0.7], // bonus dmg % vs a target still at full hp
+      descs: [
+        'Assassins deal +40% bonus damage to any target still at full HP.',
+        'Assassins deal +70% bonus damage to any target still at full HP.',
+      ],
+    },
   };
-  const BLEED_RATE = 0.015; // 1.5% of max hp per second
-  const BLEED_TIME = 3; // seconds, refreshed on every animal hit (does NOT stack)
+  const BLEED_RATE = 0.015; // 1.5% of max hp per second — a single flat stack,
+  // refreshed to BLEED_TIME by every animal bite, never compounded
+  const BLEED_TIME = 3; // seconds
   const SCAV_TIME = 5; // seconds a scavenger keeps its post-kill haste
+  const PACK_HASTE = 0.75; // attack-interval multiplier for a 2+ animal pack (lower = faster)
 
   const hasTrait = (u, t) => (u.traits || []).includes(t);
 
@@ -339,9 +389,9 @@
     return state.traitLvl[u.team][trait] || 0;
   }
 
-  // Bake stat traits (Frontline HP, Marn Elite stats) into a unit's maxHp/dmg
-  // for this battle, starting from its untouched base values. Called once at
-  // the bell after the trait snapshot is taken.
+  // Bake stat traits (Frontline HP, Marn Elite stats, Guardian shield) into a
+  // unit's maxHp/dmg/shield for this battle, starting from its untouched base
+  // values. Called once at the bell after the trait snapshot is taken.
   function applyTraitBuffs() {
     state.units.forEach((u) => {
       let hpMult = 1;
@@ -355,6 +405,8 @@
       }
       u.maxHp = Math.round(u.baseMaxHp * hpMult);
       u.dmg = Math.round(u.baseDmg * dmgMult);
+      const gd = unitTraitLvl(u, 'guardian');
+      u.shield = (u.baseShield || 0) + (gd ? TRAITS.guardian.shieldAdd[gd - 1] : 0);
       u.hp = u.maxHp;
     });
   }
@@ -598,6 +650,7 @@
       dmg: s.dmg,
       baseDmg: s.dmg,
       shield: s.shield,
+      baseShield: s.shield, // Guardian's shield bonus is baked on top of this
       traits: s.traits,
       bleedT: 0, // seconds of bleed left on this unit
       bleedAcc: 0, // bled damage waiting to be shown as one popup
@@ -702,12 +755,26 @@
           gold for units and rerolls; banks toward interest.
        2. VALUE    — every decision runs on power-per-slot (powerOf): hp +
           sustained dps, doubled per star, halved for 2-slot units.
-       3. TRAITS   — animal units are worth more when it already owns other
-          distinct animals (aiValue), so it completes the haste/bleed comp.
-       4. MERGES   — always finishes a triple; only starts collecting a pair
-          when the merged unit would clearly upgrade its board; max 2 projects
-          at once. Obeys the ★3 race lock: once locked out of a unit's ★3 it
-          stops buying copies past its ★2 and sells any surplus ★2s of it.
+       3. TRAITS   — aiValue boosts ANY unit for every roster-mate sharing a
+          trait with it (generic over the whole TRAITS registry — animal,
+          marksman, frontline, enlighted, darkarts, marn, scavenger — so a
+          new comp added to TRAITS is understood automatically, no AI code
+          change needed unless the comp's VALUE should weigh differently).
+       3b. COMPOSITION — aiValue also boosts a unit that fills a role the
+          FIELDED board is short on: melee frontline, ranged backline, a
+          tanky damage-soaker (shield/frontline/guardian), and especially
+          any healing at all (biggest boost — zero sustain is the worst
+          gap). This is what stops the board from ending up all-melee,
+          all-glass, or with no support.
+       4. MERGES   — DIVERSITY FIRST: at most one roster entry per unit id,
+          ever. It'll merge a first triple into a ★2 (only starting that
+          pair when the merged result would clearly upgrade its board, max
+          2 such pair-projects at once) — but the instant a unit hits ★2 it
+          is "settled" and never bought again, full stop. This deliberately
+          caps most units at ★2: the AI is trading away deliberate ★3 pushes
+          for a board that's always a real team of distinct units instead of
+          stacks of the same piece. (A natural ★3 is still possible if 3 ★2
+          copies of one id ever coexist, and still obeys the ★3 race lock.)
        5. UPGRADES — swaps its weakest uninvested ★1 for clearly better units.
        6. FIELDING — fields its strongest pieces up to the shared unit cap;
           melee to the front rows, ranged to the back; positions persist.
@@ -724,16 +791,38 @@
   };
   const rosterScore = (r) => powerOf(r.id, r.star);
 
-  // What a unit is worth TO THE AI's comp: raw power, boosted when it's an
-  // animal and the roster already holds other distinct animals — each extra
-  // pack member is +15%, so it actively completes the haste/bleed comp.
+  // The units it would actually field right now, strongest first — used to
+  // find "the weakest fielded piece" (the upgrade bar), to read what ROLES
+  // the board already covers (composition balance below), and by buildEnemy
+  // to place the real battlefield units. DEDUPED BY ID: while a unit is
+  // still mid-merge it can briefly have 2 copies sitting in the roster (not
+  // yet 3, so aiMerge hasn't combined them) — only the stronger one is ever
+  // fielded, so the AI can never show two of the same unit on the board.
+  function fieldedRoster() {
+    const bestPerId = new Map();
+    state.enemyRoster.forEach((r) => {
+      const cur = bestPerId.get(r.id);
+      if (!cur || rosterScore(r) > rosterScore(cur)) bestPerId.set(r.id, r);
+    });
+    return Array.from(bestPerId.values())
+      .sort((a, b) => rosterScore(b) - rosterScore(a))
+      .slice(0, maxBoardUnits());
+  }
+
+  // What a unit is worth TO THE AI's comp: raw power, adjusted for two
+  // things a real player weighs too —
+  //   (a) TRAIT SYNERGY: boosted when the roster already holds other
+  //       distinct units sharing a trait, so it completes whatever comp
+  //       it's building (animals, marksmen, anything in TRAITS).
+  //   (b) COMPOSITION BALANCE: boosted when it fills a role the fielded
+  //       board is currently short on — melee frontline, ranged backline,
+  //       a tanky damage-soaker, or (most of all) any healing/sustain at
+  //       all, since a comp with zero of one role loses fights a "same
+  //       total power but balanced" comp would win.
   function aiValue(id, star) {
     let v = powerOf(id, star);
     const s = statsOf(id, 1);
     if (!s) return v;
-    // Comp synergy, for EVERY registered trait: each distinct roster-mate
-    // sharing a trait adds 15%, so the AI completes whatever comp it's on —
-    // animals, marksmen, and anything added to TRAITS later.
     s.traits.forEach((trait) => {
       if (!TRAITS[trait]) return;
       const others = new Set(
@@ -741,6 +830,24 @@
       ).size;
       v *= 1 + 0.15 * others;
     });
+
+    const fielded = fieldedRoster();
+    const n = fielded.length || 1;
+    const roleOf = (r) => statsOf(r.id, 1);
+    const meleeCount = fielded.filter((r) => roleOf(r).range === 1).length;
+    const rangedCount = n - meleeCount;
+    const tankyCount = fielded.filter((r) => {
+      const rs = roleOf(r);
+      return rs.shield > 0 || hasTrait(rs, 'frontline') || hasTrait(rs, 'guardian');
+    }).length;
+    const hasHealer = fielded.some((r) => hasTrait(roleOf(r), 'enlighted'));
+
+    if (s.range === 1 && meleeCount < Math.ceil(n * 0.5)) v *= 1.15; // needs more frontline
+    if (s.range > 1 && rangedCount < Math.ceil(n * 0.3)) v *= 1.15; // needs backline damage
+    if ((s.shield > 0 || hasTrait(s, 'frontline') || hasTrait(s, 'guardian')) && tankyCount < Math.ceil(n * 0.3)) {
+      v *= 1.15; // needs more defense/tanks, not just raw damage
+    }
+    if (!hasHealer && hasTrait(s, 'enlighted')) v *= 1.35; // zero sustain is the biggest gap to close
     return v;
   }
 
@@ -796,29 +903,28 @@
       const offer = Array.from({ length: CONFIG.shopSlots }, () => rollUnit(state.level)).sort(
         (a, b) => aiValue(b, 1) - aiValue(a, 1)
       );
+
       for (const id of offer) {
         const s = statsOf(id, 1);
         if (!s || state.enemyGold < s.cost) continue;
         const roster = state.enemyRoster; // aiMerge/selling replace the array
 
+        // DIVERSITY: at most one roster entry per unit id. The moment a unit
+        // reaches ★2 it's "settled" — no more copies of it are ever bought,
+        // full stop. This caps every unit's ceiling at ★2 (a deliberate
+        // trade: it means the AI rarely reaches ★3, but it keeps its board a
+        // real team instead of two or three stacks of the same piece).
+        const owned = roster.filter((r) => r.id === id);
+        if (owned.some((r) => r.star > 1)) continue;
+        const copies = owned.length; // all ★1 here — settled ids were filtered above
+
         // What its board currently looks like: strongest pieces get fielded,
         // so the bar every purchase must clear is the weakest FIELDED piece.
-        const sorted = roster.slice().sort((a, b) => rosterScore(b) - rosterScore(a));
-        const fielded = sorted.slice(0, maxBoardUnits());
+        const fielded = fieldedRoster();
         const weakest = fielded[fielded.length - 1] || null;
         const weakestP = weakest ? rosterScore(weakest) : 0;
-        const copies = roster.filter((r) => r.id === id && r.star === 1).length;
 
-        // The ★3 race: if the player owns this unit's ★3, the AI's merge path
-        // stops at ★2 — once it HAS that ★2, more copies are dead gold.
-        if (
-          state.star3By[id] === 'player' &&
-          roster.some((r) => r.id === id && r.star >= CONFIG.maxStar - 1)
-        ) {
-          continue;
-        }
-
-        // 1. Completing a triple doubles a whole unit — always worth it.
+        // 1. Completing a triple — its ONE and only merge — always worth it.
         if (copies === 2) {
           state.enemyGold -= s.cost;
           roster.push({ id, star: 1, col: null, row: null });
@@ -830,12 +936,10 @@
           roster.push({ id, star: 1, col: null, row: null });
           continue;
         }
-        // 3. Second copy (starting/continuing a merge project): only if the
-        //    MERGED unit would clearly upgrade the board. This is what stops
-        //    it from 3-starring cheap tier-1s all game — late on, a ★2 archer
-        //    doesn't beat what it already fields, so it stops collecting.
-        //    At most 2 projects at a time, so its board stays varied instead
-        //    of turning into stacks of the same unit.
+        // 3. Second copy of a brand-new id: only if the merged ★2 would
+        //    clearly upgrade the board. At most 2 such pair-projects run
+        //    at once, so the board keeps filling with variety rather than
+        //    committing everything to one or two units at a time.
         if (copies === 1 && roster.length < state.level + CONFIG.benchSlots) {
           const projects = new Set(
             roster.filter((r) => r.star === 1 && roster.filter((x) => x.id === r.id && x.star === 1).length >= 2).map((r) => r.id)
@@ -847,14 +951,12 @@
           }
           continue;
         }
-        // 4. Straight upgrade: a fresh unit whose ★1 power beats the weakest
-        //    fielded piece — sell that piece and field the better one. This is
-        //    the steady tier-1 → tier-5 drift, and it knows late game wants
-        //    expensive units: even a merged ★2 gets sold (at its 3x refund)
-        //    when a newcomer CLEARLY outclasses it, so the board never stays
-        //    glued to stage-2 merges. Only a ★3 is forever. An uninvested ★1
-        //    goes cheaply (1.1x bar); ditching a ★2 needs a 1.35x case. Pieces
-        //    with roster-mates of the same id are live merge projects — kept.
+        // 4. Straight upgrade: a fresh, never-before-owned unit whose ★1
+        //    power beats the weakest fielded piece — sell that piece and
+        //    field the better one. The steady tier-1 → tier-5 drift; even a
+        //    merged ★2 gets sold (at its 3x refund) when a newcomer clearly
+        //    outclasses it. Only a ★3 is forever. An uninvested ★1 goes
+        //    cheaply (1.1x bar); ditching a ★2 needs a 1.35x case.
         if (
           weakest &&
           weakest.star < CONFIG.maxStar &&
@@ -873,8 +975,9 @@
       state.enemyGold -= CONFIG.rerollCost;
     }
 
-    // Housekeeping: a race-locked unit can never reach ★3, so holding more
-    // than one ★2 of it is pointless — sell the extras back.
+    // Housekeeping safety net: the buy loop above now refuses a second copy
+    // of any id once it's ★2+, so this shouldn't fire in practice — kept in
+    // case a stray duplicate ever slips through (e.g. old save state).
     Object.keys(state.star3By).forEach((id) => {
       if (state.star3By[id] !== 'player') return;
       const twos = state.enemyRoster.filter((r) => r.id === id && r.star === CONFIG.maxStar - 1);
@@ -954,10 +1057,18 @@
     // to the same unit count the player is allowed. Spare copies it's still
     // collecting wait on its (invisible) bench. Pieces keep the cell they
     // were first placed in; only new buys get assigned a spot.
+    // DEDUPED BY ID first: a unit mid-merge can briefly hold 2 copies (not
+    // yet 3, so they haven't combined into one), but only the stronger copy
+    // is ever a fielding candidate — the board can never show two of the
+    // same unit even while the AI is still finishing that merge behind it.
+    const bestPerId = new Map();
+    state.enemyRoster.forEach((r) => {
+      const cur = bestPerId.get(r.id);
+      if (!cur || rosterScore(r) > rosterScore(cur)) bestPerId.set(r.id, r);
+    });
     const fielded = [];
     let slotsUsed = 0;
-    state.enemyRoster
-      .slice()
+    Array.from(bestPerId.values())
       .sort((a, b) => rosterScore(b) - rosterScore(a))
       .forEach((r) => {
         const need = statsOf(r.id, 1).slots;
@@ -1092,10 +1203,52 @@
     return { col: node.col, row: node.row, targetUid: goalFoe.uid };
   }
 
+  // Animal bite: just refreshes the timer to 3s — always a single stack, no
+  // matter how many animals are biting the same target at once.
+  function applyBleed(target) {
+    target.bleedT = BLEED_TIME;
+  }
+
+  // Scavengers: on a takedown, the killer's post-kill haste REFRESHES (never
+  // stacks), and a melee killer instantly advances into the corpse's cell —
+  // "the next hex" — so it's already in position to swing at whoever's next.
+  function triggerScavenger(killerUid, deadCol, deadRow, teleport) {
+    const killer = state.units.find((x) => x.uid === killerUid && x.hp > 0);
+    if (!killer || !unitTraitLvl(killer, 'scavenger')) return;
+    killer.scavHasteT = SCAV_TIME;
+    if (teleport) {
+      killer.col = deadCol;
+      killer.row = deadRow;
+    }
+    killer.targetUid = null; // free to pick the next nearest foe immediately
+  }
+
   function tick(dt) {
     if (state.phase !== 'battle') return;
     const step = Math.min(dt, 0.1);
     state.battleTime = (state.battleTime || 0) + step;
+
+    // Enlighted: a slow team-wide heal pulse for any side with 2+ Enlighted
+    // units on the field — 1 target at the first breakpoint, up to 3 at full.
+    state.healPulseT = (state.healPulseT == null ? TRAITS.enlighted.healEvery : state.healPulseT) - step;
+    if (state.healPulseT <= 0) {
+      state.healPulseT += TRAITS.enlighted.healEvery;
+      ['player', 'enemy'].forEach((team) => {
+        const lvl = state.traitLvl ? state.traitLvl[team].enlighted : 0;
+        if (!lvl) return;
+        const count = TRAITS.enlighted.healCount[lvl - 1];
+        const wounded = state.units
+          .filter((u) => u.team === team && u.hp > 0 && u.hp < u.maxHp)
+          .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)
+          .slice(0, count);
+        wounded.forEach((u) => {
+          const gain = Math.min(Math.round(u.maxHp * TRAITS.enlighted.healPct), u.maxHp - u.hp);
+          if (gain <= 0) return;
+          u.hp += gain;
+          state.hits.push({ col: u.col, row: u.row, amount: gain, targetUid: u.uid, fx: 'heal' });
+        });
+      });
+    }
 
     // Act in a random order every tick. Iterating in array order meant players
     // always moved first, so the enemy got to path toward their finished
@@ -1109,7 +1262,9 @@
 
     order.forEach((u) => {
       if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - step);
-      // bleeding (animal comp): a cut of max hp per second, shown in ~1s drips
+      if (u.scavHasteT > 0) u.scavHasteT = Math.max(0, u.scavHasteT - step);
+      // bleeding (animal comp): always a single stack — any animal biting
+      // the target just refreshes the 3s timer, it never compounds.
       if (u.bleedT > 0 && u.hp > 0) {
         u.bleedT = Math.max(0, u.bleedT - step);
         const d = u.maxHp * BLEED_RATE * step;
@@ -1165,25 +1320,46 @@
         if (u.atkTimer <= 0) {
           // each unit swings at its OWN speed (atk_speed in units.csv), with a
           // little slop so the armies never settle into one coordinated beat.
-          // An active pack (2+ animals) swings 25% faster; only the FULL pack
-          // of 4 makes the hits bleed.
+          // Speed sources multiply together: pack haste (2+ animals) and the
+          // scavenger's post-kill haste (never stacks with itself, but can
+          // stack with pack haste on a unit that's both, e.g. the Lion).
           const packLvl =
             state.traitLvl && hasTrait(u, 'animal') ? state.traitLvl[u.team].animal : 0;
-          u.atkTimer =
-            u.atkInterval * (0.85 + Math.random() * 0.3) * (packLvl >= 1 ? PACK_HASTE : 1);
+          const scavLvl = unitTraitLvl(u, 'scavenger');
+          let speedMult = 1;
+          if (packLvl >= 1) speedMult *= PACK_HASTE;
+          if (scavLvl && u.scavHasteT > 0) speedMult *= TRAITS.scavenger.killHaste[scavLvl - 1];
+          u.atkTimer = u.atkInterval * (0.85 + Math.random() * 0.3) * speedMult;
           u.lungeT = CONFIG.lungeTime;
           u.lungeTo = { col: target.col, row: target.row };
 
+          // only the FULL animal pack (4) makes hits bleed
           const bleeds = packLvl >= 2;
-          // Marksman comp: +10% damage per marksman fielded (traitLevel is
-          // count-1, so lvl 1 = 2 marksmen = +20%, lvl 3 = full squad = +40%).
-          const markLvl =
-            state.traitLvl && hasTrait(u, 'marksman') ? state.traitLvl[u.team].marksman : 0;
-          const swingDmg =
-            markLvl >= 1 ? Math.round(u.dmg * (1 + MARKSMAN_DMG * (markLvl + 1))) : u.dmg;
+
+          // Marksman/Dark Arts: flat bonus % damage. Berserker: bonus % that
+          // ramps up as the attacker's own HP drops below half. Assassin:
+          // bonus % against a target still untouched (still at full HP).
+          // All fold straight into the swing.
+          let swingDmg = u.dmg;
+          const markLvl = unitTraitLvl(u, 'marksman');
+          if (markLvl) swingDmg += Math.round(u.dmg * TRAITS.marksman.dmgPct[markLvl - 1]);
+          const darkLvl = unitTraitLvl(u, 'darkarts');
+          if (darkLvl) swingDmg += Math.round(u.dmg * TRAITS.darkarts.bonus[darkLvl - 1]);
+          const berLvl = unitTraitLvl(u, 'berserker');
+          if (berLvl) {
+            const hpFrac = u.hp / u.maxHp;
+            const rage = TRAITS.berserker.maxBonus[berLvl - 1] * Math.max(0, Math.min(1, (0.5 - hpFrac) / 0.5));
+            if (rage > 0) swingDmg += Math.round(u.dmg * rage);
+          }
+          const assLvl = unitTraitLvl(u, 'assassin');
+          if (assLvl && target.hp === target.maxHp) {
+            swingDmg += Math.round(u.dmg * TRAITS.assassin.bonus[assLvl - 1]);
+          }
+
           if (u.range > 1) {
             // ranged: loose an arrow — the damage only lands when it arrives
             state.projectiles.push({
+              fromUid: u.uid,
               targetUid: target.uid,
               dmg: swingDmg,
               t: bestD / CONFIG.projectileSpeed,
@@ -1215,7 +1391,8 @@
               targetUid: target.uid,
               fx: 'slash',
             });
-            if (bleeds) target.bleedT = BLEED_TIME; // animal claws open the wound
+            if (bleeds) applyBleed(target); // animal claws open (or deepen) the wound
+            if (target.hp === 0) triggerScavenger(u.uid, target.col, target.row, true);
           }
         }
       } else {
@@ -1245,7 +1422,7 @@
       const blocked = Math.min(target.shield || 0, Math.max(0, p.dmg - 1));
       const dealt = Math.max(1, p.dmg - blocked);
       target.hp = Math.max(0, target.hp - dealt);
-      if (p.bleeds) target.bleedT = BLEED_TIME;
+      if (p.bleeds) applyBleed(target);
       state.hits.push({
         col: target.col,
         row: target.row,
@@ -1254,6 +1431,8 @@
         targetUid: target.uid,
         fx: 'impact', // popup + shield flare, no new projectile visual
       });
+      // ranged scavengers (Hunter) get the post-kill haste too, just no lunge
+      if (target.hp === 0) triggerScavenger(p.fromUid, target.col, target.row, false);
       return false;
     });
 
@@ -1331,6 +1510,7 @@
       // shed battle-only trait buffs — prep shows base stats again
       u.maxHp = u.baseMaxHp || u.maxHp;
       u.dmg = u.baseDmg || u.dmg;
+      u.shield = u.baseShield != null ? u.baseShield : u.shield;
       u.hp = u.maxHp;
       u.scavHasteT = 0;
       u.atkTimer = 0;
