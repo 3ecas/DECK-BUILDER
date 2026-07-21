@@ -207,6 +207,31 @@
     slots: 1,
   };
 
+  // The Dark Arts summon: one persistent minion per team, re-forged stronger
+  // at each darkarts breakpoint (index = traitLevel-1). Not in units.csv, so
+  // it can never show up in the shop, get bought, benched, or sold — it's
+  // purely a battle entity conjured by syncDarkArtsSummons().
+  const DARK_SUMMON = [
+    {
+      id: 'dark_beast_1', name: 'Dark Beast', emoji: '🐺', tier: 2, cost: 0,
+      hp: 650, dmg: 35, range: 1, atkSpeed: 0.6, moveSpeed: 2.4, color: 'grey', shield: 0,
+    },
+    {
+      id: 'dark_beast_2', name: 'Dark Beast', emoji: '🐺', tier: 3, cost: 0,
+      hp: 1100, dmg: 65, range: 1, atkSpeed: 0.65, moveSpeed: 2.5, color: 'grey', shield: 6,
+    },
+    {
+      id: 'dark_beast_3', name: 'Greater Dark Beast', emoji: '🐉', tier: 4, cost: 0,
+      hp: 1700, dmg: 100, range: 1, atkSpeed: 0.7, moveSpeed: 2.6, color: 'grey', shield: 14,
+    },
+    {
+      id: 'dark_lady', name: 'The Dark Lady', emoji: '🧛‍♀️', tier: 5, cost: 0,
+      hp: 2400, dmg: 160, range: 3, atkSpeed: 0.6, moveSpeed: 2.2, color: 'grey', shield: 20,
+    },
+  ];
+  const DARK_SUMMON_BY_ID = {};
+  DARK_SUMMON.forEach((d) => (DARK_SUMMON_BY_ID[d.id] = d));
+
   // Stars used to double hp+dmg per level (★3 = 4x ★1) — a freshly-merged
   // ★3 tier-1 unit could rival units many tiers above it, which made an
   // early ★3 feel unbeatable. This is a gentle climb instead: each star is
@@ -214,7 +239,10 @@
   const STAR_MULT = [1, 1.35, 1.8];
 
   function statsOf(id, star) {
-    const u = id === MINION.id ? MINION : id === MINION_BOSS.id ? MINION_BOSS : U.get(id);
+    const u =
+      id === MINION.id ? MINION
+      : id === MINION_BOSS.id ? MINION_BOSS
+      : DARK_SUMMON_BY_ID[id] || U.get(id);
     if (!u) return null;
     const s = Math.max(1, Math.min(CONFIG.maxStar, star || 1));
     const mult = STAR_MULT[s - 1];
@@ -295,11 +323,16 @@
     darkarts: {
       name: 'Dark Arts',
       icon: '🔮',
-      breakpoints: [2, 4],
-      bonus: [0.25, 0.55], // bonus magic damage as a fraction of the attack
+      breakpoints: [2, 4, 6, 8],
+      // Doesn't buff its own units at all — instead it summons ONE persistent
+      // minion that fights alongside the team, re-forged stronger at each
+      // breakpoint. See DARK_SUMMON below; the summon never counts against
+      // the team's board unit cap.
       descs: [
-        'Dark Arts units deal +25% bonus magic damage on every hit.',
-        'Dark Arts units deal +55% bonus magic damage on every hit.',
+        'Summons a Dark Beast to fight alongside you.',
+        'The Dark Beast grows stronger.',
+        'The Dark Beast grows stronger still.',
+        'The Dark Beast transforms into the Dark Lady.',
       ],
     },
     marn: {
@@ -351,6 +384,36 @@
       descs: [
         'Assassins deal +40% bonus damage to any target still at full HP.',
         'Assassins deal +70% bonus damage to any target still at full HP.',
+      ],
+    },
+    vampiric: {
+      name: 'Vampiric',
+      icon: '🧛',
+      breakpoints: [2, 3],
+      lifePct: [0.12, 0.25], // % of damage dealt returned as healing
+      descs: [
+        'Vampiric units heal for 12% of the damage they deal.',
+        'Vampiric units heal for 25% of the damage they deal.',
+      ],
+    },
+    arcanist: {
+      name: 'Arcanists',
+      icon: '🌀',
+      breakpoints: [2, 3],
+      dmgPct: [0.25, 0.45], // bonus attack damage, same shape as marksman
+      descs: [
+        'Arcanists deal +25% bonus damage on every hit.',
+        'Arcanists deal +45% bonus damage on every hit.',
+      ],
+    },
+    ironclad: {
+      name: 'Ironclad',
+      icon: '🪨',
+      breakpoints: [2, 4],
+      reducePct: [0.12, 0.25], // % less damage taken, applied after shield
+      descs: [
+        'Ironclad units take 12% less damage on every hit.',
+        'Ironclad units take 25% less damage on every hit.',
       ],
     },
   };
@@ -418,8 +481,11 @@
   };
 
   // Board usage counts SLOTS, not bodies — a Titan takes 2 of your allowance.
+  // Dark Arts summons are exempt: they fight but never occupy a board slot.
   const boardCount = () =>
-    state.units.filter((u) => u.team === 'player').reduce((n, u) => n + (u.slots || 1), 0);
+    state.units
+      .filter((u) => u.team === 'player' && !u.summon)
+      .reduce((n, u) => n + (u.slots || 1), 0);
   // LEVEL follows the STAGE: stage 1 = 1 unit, stage 4 = 4 units, cap 10.
   const maxBoardUnits = () => state.level;
   const boardFull = () => boardCount() >= maxBoardUnits();
@@ -667,6 +733,53 @@
       vx: null, // drawn position; eased during battle, snapped in prep
       vy: null,
     };
+  }
+
+  /* ---------------- Dark Arts summon ---------------- */
+
+  function makeSummonUnit(defId, team, col, row) {
+    const u = makeUnit(defId, team, col, row, 1);
+    u.summon = true;
+    return u;
+  }
+
+  // Rows belonging to a team's zone, back-most first (row 0 for the enemy,
+  // the far edge row for the player) — where a fresh summon prefers to land.
+  function zoneRows(team) {
+    return team === 'enemy'
+      ? Array.from({ length: CONFIG.deployRows }, (_, r) => r)
+      : Array.from({ length: CONFIG.deployRows }, (_, r) => CONFIG.rows - 1 - r);
+  }
+
+  function summonCell(team) {
+    const taken = new Set(state.units.filter((u) => u.hp > 0).map((u) => `${u.col},${u.row}`));
+    for (const row of zoneRows(team)) {
+      const cols = Array.from({ length: CONFIG.cols }, (_, c) => c);
+      for (let i = cols.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [cols[i], cols[j]] = [cols[j], cols[i]];
+      }
+      for (const col of cols) if (!taken.has(`${col},${row}`)) return { col, row };
+    }
+    return null;
+  }
+
+  // Re-forge each team's Dark Arts summon to match its CURRENT darkarts
+  // breakpoint (2/4/6/8 -> Dark Beast I/II/III/Dark Lady). Always strips any
+  // existing summon first, so a comp that drops back below 2 loses its beast
+  // and one that climbs a breakpoint gets the stronger form in its place.
+  // The summon fights like a normal unit but never counts toward the team's
+  // board cap (see boardCount) — it's a bonus body, not a purchased one.
+  function syncDarkArtsSummons() {
+    ['player', 'enemy'].forEach((team) => {
+      state.units = state.units.filter((u) => !(u.team === team && u.summon));
+      const lvl = traitLevel(team, 'darkarts');
+      if (!lvl) return;
+      const def = DARK_SUMMON[lvl - 1];
+      const cell = summonCell(team);
+      if (!cell) return; // board is completely full — the beast waits offstage
+      state.units.push(makeSummonUnit(def.id, team, cell.col, cell.row));
+    });
   }
 
   function placeFromBench(uid, col, row) {
@@ -1128,6 +1241,9 @@
       state.traitLvl.player[t] = traitLevel('player', t);
       state.traitLvl.enemy[t] = traitLevel('enemy', t);
     });
+    // re-forge the Dark Arts summon(s) to match the locked-in comp, in case
+    // shopping since the last sync changed either team's darkarts count
+    syncDarkArtsSummons();
     // bake the stat comps (Frontline hp, Marn Elite stats) into the fighters
     applyTraitBuffs();
     state.healPulseT = TRAITS.enlighted.healEvery; // enlighted heal cadence

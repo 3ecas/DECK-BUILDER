@@ -1,20 +1,28 @@
-﻿id,name,emoji,tier,cost,hp,dmg,range,atk_speed,move_speed,color,shield,slots,traits
+id,name,emoji,tier,cost,hp,dmg,range,atk_speed,move_speed,color,shield,slots,traits
 # atk_speed = attacks per second (higher = faster; 0.5 = one hit every 2s).
 # shield = flat damage deflected from every incoming hit (never below 1 damage).
 # slots = board slots the unit occupies (Titan takes 2). Default 1.
 # traits = comp bonuses (semicolon-separated). Units are PURE STATS — any
 #   special behaviour comes from comp traits, not individual units. See the
-#   TRAITS registry in ab-game.js for exact numbers.
-#   ANIMAL (snake/bear/eagle/lion): 2+ = animals attack faster; 4 = also bleed.
-#   MARKSMAN (archer/hunter/sniper/eagle): marksmen gain +attack %.
-#   FRONTLINE (monk/bear/juggernaut/titan): +HP% to frontline units.
-#   ENLIGHTED (priest/monk/valkyrie): periodically heals wounded allies.
-#   DARKARTS (priest/knight/mage/archmage): bonus magic damage on attack.
-#   MARN (archer/guard/knight/captain/golem/warden/warlord): +stats at 2/4/6.
-#   SCAVENGER (scout/hunter/lion): on a kill, lunge to the next foe + haste 5s.
-#   GUARDIAN (templar/bulwark/aegis): +flat shield at 2/4.
-#   BERSERKER (brawler/reaver/warbringer): +dmg% that ramps up under half hp.
-#   ASSASSIN (rogue/blade/shadowblade/nightblade): +dmg% vs full-hp targets.
+#   TRAITS registry in ab-game.js for exact numbers. Every unit carries 2-3
+#   traits so it plugs into multiple comps at once.
+#   ANIMAL     — 2+ = animals attack faster; 4 = also bleed.
+#   MARKSMAN   — 2/3/4 ranged marksmen gain scaling +attack %.
+#   FRONTLINE  — 2/4 = +HP% to frontline tanks.
+#   ENLIGHTED  — 2/3 = periodically heals wounded allies (backline support).
+#   DARKARTS   — 2/4/6/8: an 8-unit-wide comp. Doesn't buff its own units —
+#     instead it summons a single persistent Dark Beast that fights alongside
+#     you, growing stronger at each breakpoint and transforming into the Dark
+#     Lady at 8. The summon does NOT count against your board unit cap.
+#   MARN       — 2/4/6 = +HP% and +damage% to Marn Elite units.
+#   SCAVENGER  — 2/3 = on a takedown, lunge to the next foe + attack faster.
+#   GUARDIAN   — 2/4 = +flat shield (baked in like a stat).
+#   BERSERKER  — 2/3 = +dmg% that ramps up the lower the attacker's own HP.
+#   ASSASSIN   — 2/3 = +dmg% vs a target still at full HP (opening burst).
+#   VAMPIRIC   — 2/3 = damage dealers heal for a % of the damage they deal.
+#   ARCANIST   — 2/3 = ranged casters deal +damage% on every hit.
+#   IRONCLAD   — 2/4 = tanks take a % LESS damage on every hit (stacks with
+#     shield, which subtracts first).
 # Power curve — base (★1) HP per tier, weakest-to-strongest in that tier:
 #   T1 500-750   T2 600-900   T3 800-1200   T4 1000-1400   T5 1500-1700
 #   (Titan is exempt — it costs 2 board slots, so it's allowed to run higher)
@@ -24,42 +32,57 @@
 # each unit's HP-preserved rank didn't shift, only the absolute numbers did.
 # Stars are now a gentle curve, not a doubling: ★1=1x, ★2=1.35x, ★3=1.8x
 # (applies to both hp and dmg — see STAR_MULT in ab-game.js).
-# ---- TIER 1 (1 gold) ----
-soldier,Soldier,🪖,1,1,620,50,1,0.7,2.5,blue,0,1,
+# ---- TIER 1 (1 gold) — 12 units ----
+soldier,Soldier,🪖,1,1,620,50,1,0.7,2.5,blue,0,1,frontline;ironclad
 archer,Archer,🏹,1,1,540,54,4,0.5,2.5,green,0,1,marn;marksman
-guard,Guard,🛡️,1,1,750,16,1,0.5,2.2,grey,0,1,marn
+guard,Guard,🛡️,1,1,750,16,1,0.5,2.2,grey,0,1,marn;frontline
 priest,Priest,🕊️,1,1,500,45,4,0.5,2.5,yellow,0,1,enlighted;darkarts
-scout,Scout,🏃,1,1,560,63,1,0.7,3.5,red,0,1,scavenger
-snake,Snake,🐍,1,1,580,54,1,0.8,3,green,0,1,animal
-brawler,Brawler,🥊,1,1,680,47,1,0.7,2.5,red,0,1,berserker
-rogue,Rogue,🥷,1,1,520,61,1,0.9,2.9,grey,0,1,assassin
-# ---- TIER 2 (2 gold) ----
+scout,Scout,🏃,1,1,560,63,1,0.7,3.5,red,0,1,scavenger;berserker
+snake,Snake,🐍,1,1,580,54,1,0.8,3,green,0,1,animal;vampiric
+brawler,Brawler,🥊,1,1,680,47,1,0.7,2.5,red,0,1,berserker;vampiric
+rogue,Rogue,🥷,1,1,520,61,1,0.9,2.9,grey,0,1,assassin;scavenger
+cultist,Cultist,🕯️,1,1,510,46,3,0.55,2.4,grey,0,1,darkarts;arcanist
+wall,Wall,🧱,1,1,700,18,1,0.5,2,grey,10,1,guardian;ironclad
+fox,Fox,🦊,1,1,560,58,1,0.8,3.2,red,0,1,animal;scavenger
+imp,Imp,👺,1,1,480,50,3,0.6,2.6,yellow,0,1,arcanist;darkarts
+# ---- TIER 2 (2 gold) — 12 units ----
 knight,Knight,⚔️,2,2,730,68,1,0.7,2.5,blue,0,1,darkarts;marn
 bear,Bear,🐻,2,2,900,29,1,0.5,2.2,red,0,1,animal;frontline
 hunter,Hunter,🎯,2,2,600,68,4,0.7,2.7,green,0,1,scavenger;marksman
 monk,Monk,🥋,2,2,680,32,1,1.5,2.6,yellow,0,1,frontline;enlighted
-templar,Templar,🔰,2,2,820,36,1,0.5,2.3,blue,14,1,guardian
-blade,Blade,🔪,2,2,630,86,1,0.8,2.9,grey,0,1,assassin
-# ---- TIER 3 (3 gold) ----
-captain,Captain,🎖️,3,3,1050,81,1,0.7,2.5,blue,0,1,marn
-sniper,Sniper,🔭,3,3,850,99,4,0.7,2.3,green,0,1,marksman
-golem,Golem,🪨,3,3,1200,20,1,0.5,1.8,grey,7,1,marn
-mage,Mage,🔮,3,3,800,149,4,0.5,2.5,yellow,0,1,darkarts
+templar,Templar,🔰,2,2,820,36,1,0.5,2.3,blue,14,1,guardian;ironclad
+blade,Blade,🔪,2,2,630,86,1,0.8,2.9,grey,0,1,assassin;vampiric
+duelist,Duelist,🤺,2,2,640,78,1,0.8,2.8,red,0,1,assassin;vampiric
+warhound,Warhound,🐕‍🦺,2,2,760,50,1,0.7,3,green,0,1,animal;frontline
+shaman,Shaman,🧙‍♂️,2,2,650,60,3,0.6,2.4,yellow,0,1,enlighted;arcanist
+vanguard,Vanguard,🚩,2,2,820,55,1,0.6,2.2,blue,8,1,guardian;marn
+ranger,Ranger,🪃,2,2,600,72,4,0.6,2.6,green,0,1,marksman;vampiric
+brute,Brute,🦍,2,2,900,65,1,0.6,2.3,grey,0,1,berserker;ironclad
+# ---- TIER 3 (3 gold) — 12 units ----
+captain,Captain,🎖️,3,3,1050,81,1,0.7,2.5,blue,0,1,marn;frontline
+sniper,Sniper,🔭,3,3,850,99,4,0.7,2.3,green,0,1,marksman;assassin
+golem,Golem,🪨,3,3,1200,20,1,0.5,1.8,grey,7,1,marn;ironclad;guardian
+mage,Mage,🔮,3,3,800,149,4,0.5,2.5,yellow,0,1,darkarts;arcanist
 eagle,Eagle,🦅,3,3,900,90,4,0.8,2.9,green,0,1,animal;marksman
-reaver,Reaver,🪓,3,3,980,94,1,0.6,2.4,red,0,1,berserker
-bulwark,Bulwark,🏯,3,3,1150,29,1,0.5,1.9,blue,22,1,guardian
+reaver,Reaver,🪓,3,3,980,94,1,0.6,2.4,red,0,1,berserker;vampiric
+bulwark,Bulwark,🏯,3,3,1150,29,1,0.5,1.9,blue,22,1,guardian;ironclad
+warlock,Warlock,🧛‍♂️,3,3,820,120,4,0.5,2.4,grey,0,1,darkarts;arcanist
+banshee,Banshee,👻,3,3,780,110,4,0.55,2.5,grey,0,1,darkarts;vampiric
+panther,Panther,🐆,3,3,950,95,1,0.85,3.1,green,0,1,animal;scavenger
+paladin,Paladin,⛪,3,3,1100,70,1,0.6,2.2,blue,12,1,guardian;enlighted;marn
+stormcaller,Stormcaller,⛈️,3,3,850,135,4,0.55,2.4,yellow,0,1,arcanist;marksman
 # ---- TIER 4 (4 gold) ----
-champion,Champion,🏆,4,4,1120,99,1,0.8,2.6,red,0,1,
-juggernaut,Juggernaut,🗿,4,4,1400,74,1,0.5,1.8,blue,0,1,frontline
-valkyrie,Valkyrie,🗡️,4,4,1050,99,1,1,2.8,red,0,1,enlighted
-warden,Warden,🏰,4,4,1330,45,1,0.5,2,blue,9,1,marn
+champion,Champion,🏆,4,4,1180,99,1,0.8,2.6,red,0,1,marn;frontline;ironclad
+juggernaut,Juggernaut,🗿,4,4,1400,74,1,0.5,1.8,blue,0,1,frontline;ironclad
+valkyrie,Valkyrie,🗡️,4,4,1050,99,1,1,2.8,red,0,1,enlighted;assassin
+warden,Warden,🏰,4,4,1330,45,1,0.5,2,blue,9,1,marn;guardian
 lion,Lion,🦁,4,4,1180,101,1,0.8,2.7,red,0,1,animal;scavenger
-shadowblade,Shadowblade,🌑,4,4,1000,122,1,0.9,3,grey,0,1,assassin
-warbringer,Warbringer,⚡,4,4,1250,83,1,0.6,2.4,red,0,1,berserker
-# ---- TIER 5 (5 gold) — only appear from stage 7 ----
-warlord,Warlord,👑,5,5,1560,137,1,1,2.6,red,0,1,marn
-archmage,Archmage,🌟,5,5,1500,158,4,0.5,2.4,yellow,0,1,darkarts
-titan,Titan,🌋,5,5,2600,162,1,0.6,1.8,grey,0,2,frontline
-reaper,Reaper,💀,5,5,1520,187,1,0.8,2.8,grey,0,1,
-aegis,Aegis,🏛️,5,5,1700,99,1,0.5,1.9,blue,36,1,guardian
-nightblade,Nightblade,🌌,5,5,1580,234,1,1,3,grey,0,1,assassin
+shadowblade,Shadowblade,🌑,4,4,1000,122,1,0.9,3,grey,0,1,assassin;vampiric
+warbringer,Warbringer,⚡,4,4,1250,83,1,0.6,2.4,red,0,1,berserker;vampiric
+hexlord,Hexlord,🕸️,4,4,1150,128,4,0.55,2.3,grey,0,1,darkarts;arcanist;marksman
+# ---- TIER 5 (5 gold) — only appear from stage 7 — 5 units ----
+warlord,Warlord,👑,5,5,1560,137,1,1,2.6,red,0,1,marn;berserker;vampiric
+archmage,Archmage,🌟,5,5,1500,158,4,0.5,2.4,yellow,0,1,darkarts;arcanist;marksman
+titan,Titan,🌋,5,5,2600,162,1,0.6,1.8,grey,0,2,frontline;ironclad;guardian
+reaper,Reaper,💀,5,5,1520,187,1,0.8,2.8,grey,0,1,assassin;scavenger;berserker
+aegis,Aegis,🏛️,5,5,1700,99,1,0.5,1.9,blue,36,1,guardian;ironclad;frontline
