@@ -1107,9 +1107,18 @@ body {
   line-height: 1.1;
 }
 
-.slot-stats {
-  font-size: 0.72rem;
+.slot-traits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 4px;
+  font-size: 0.66rem;
+  line-height: 1.25;
   color: var(--dim);
+}
+
+.slot-trait {
+  white-space: nowrap;
 }
 
 /* ---------- unit animations ---------- */

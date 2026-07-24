@@ -383,15 +383,19 @@
     const s = AB.statsOf(id, 1);
     const afford = AB.state.gold >= s.cost;
     const evolves = AB.countCopies(id, 1) >= 2; // buying this one triggers a merge
-    const rng = s.range > 1 ? ` · rng${s.range}` : '';
-    const shd = s.shield ? ` · 🛡${s.shield}` : '';
-    const spd = ` · ${s.atkSpeed}/s`;
+    const traitsHtml = (s.traits || [])
+      .map((t) => {
+        const tr = AB.TRAITS[t];
+        return tr ? `<span class="slot-trait">${tr.icon} ${esc(tr.name)}</span>` : '';
+      })
+      .filter(Boolean)
+      .join('');
     return `
       <div class="shop-slot tier-${s.tier} ${afford ? '' : 'poor'} ${evolves ? 'evolves' : ''}" data-shop="${i}">
         <div class="slot-top"><span class="slot-tier">T${s.tier}</span><span class="slot-cost">${s.cost}g</span></div>
         <div class="slot-em">${s.emoji}</div>
         <div class="slot-name">${esc(s.name)}</div>
-        <div class="slot-stats">${s.maxHp}hp · ${s.dmg}atk${spd}${rng}${shd}</div>
+        <div class="slot-traits">${traitsHtml}</div>
       </div>`;
   }
 

@@ -271,53 +271,78 @@
 
   // Registry of every comp bonus in the game. Each entry's array fields hold
   // the effect magnitude per breakpoint (index 0 = first breakpoint reached).
-  // Effects are applied in two ways:
+  // Effects are applied in a few ways:
   //   - STAT traits (frontline hp%, marn hp%+dmg%) are baked into a unit's
   //     maxHp/dmg once at battle start by applyTraitBuffs()
-  //   - LIVE traits act every tick: animal (attack-speed pack haste + bleed
-  //     stacks once full), marksman/darkarts (bonus dmg folded into swings),
-  //     enlighted (periodic team heal pulse), scavenger (post-kill haste +
-  //     lunge). See unitTraitLvl() for reading a unit's active breakpoint.
+  //   - The ANIMAL kit is special: each specific animal UNIT present grants
+  //     its own team-wide bonus (see applyAnimalKit/animalPackInfo), scaled
+  //     by how many distinct animal units (1-5) the team has fielded.
+  //   - LIVE traits act every tick: marksman/arcanist (bonus dmg folded into
+  //     swings), enlighted (periodic team heal pulse), vampiric (lifesteal),
+  //     colossus (periodic AoE pulse). See unitTraitLvl() for reading a
+  //     unit's active breakpoint.
   const TRAITS = {
     animal: {
       name: 'Animals',
       icon: '🐾',
-      breakpoints: [2, 4],
-      haste: [0.75, 0.75], // attack-interval multiplier (lower = faster)
-      bleedFrom: 2, // breakpoint index (1-based) at which bleed turns on
+      breakpoints: [1, 2, 3, 4, 5], // pack size = distinct animal units fielded
+      // Each specific animal grants ITS OWN team-wide bonus while fielded;
+      // magnitude scales with total pack size (index = packSize-1). See
+      // animalPackInfo()/applyAnimalKit() for how these are actually applied.
+      atkSpeedPct: [0.06, 0.12, 0.18, 0.24, 0.3], // Snake: team attack speed
+      shieldAdd: [12, 24, 40, 60, 85], // Bear: team flat shield
+      dmgPct: [0.06, 0.12, 0.18, 0.24, 0.3], // Eagle: team attack damage
+      hpPct: [0.06, 0.12, 0.18, 0.24, 0.3], // Lion: team HP
+      lifePct: [0.04, 0.08, 0.12, 0.16, 0.2], // Beast Master: team lifesteal
       descs: [
-        'The pack stirs: every animal attacks 25% faster.',
-        'The full pack hunts: haste, plus animal attacks make foes bleed 1.5% of max hp per second for 3s (refreshed by every bite, doesn\'t stack).',
+        'Each animal on your team grants its own team-wide bonus — Snake: attack speed, Bear: shield, Eagle: damage, Lion: HP, Beast Master: lifesteal.',
+        'Pack size 2: every active animal bonus grows stronger.',
+        'Pack size 3: every active animal bonus grows stronger still.',
+        'Pack size 4: every active animal bonus grows stronger yet.',
+        'Pack size 5 (the full pack): every active animal bonus is maxed out.',
       ],
     },
     marksman: {
       name: 'Marksman',
       icon: '🎯',
-      breakpoints: [2, 3, 4],
-      dmgPct: [0.2, 0.3, 0.4], // bonus attack damage
+      breakpoints: [1, 2, 3, 4, 5, 6],
+      rangeAdd: [1, 2, 3, 4, 5, 6], // +1 hex range per Marksman fielded — baked in like a stat trait
+      dmgPerHex: 0.08, // intrinsic, not breakpoint-gated: +8% bonus dmg per hex of distance fired
       descs: [
-        'Marksmen deal +20% attack damage.',
-        'Marksmen deal +30% attack damage.',
-        'Marksmen deal +40% attack damage.',
+        'Marksmen gain +1 hex of range. Every Marksman deals +8% bonus damage per hex of distance to its target when it fires.',
+        'Marksmen gain +2 hex of range.',
+        'Marksmen gain +3 hex of range.',
+        'Marksmen gain +4 hex of range.',
+        'Marksmen gain +5 hex of range.',
+        'Marksmen gain +6 hex of range.',
       ],
     },
     frontline: {
       name: 'Frontline',
       icon: '🛡️',
-      breakpoints: [2, 4],
-      hpPct: [0.25, 0.6], // +HP to frontline units
-      descs: ['Frontline units gain +25% HP.', 'Frontline units gain +60% HP.'],
+      breakpoints: [2, 4, 6],
+      hpPct: [0.2, 0.45, 0.8], // +HP to frontline units
+      // Near-death rescue: the FIRST time a frontline unit drops to/below the
+      // threshold, it's instantly healed back up to the target — once only
+      // per battle. Damage after that is never rescued again.
+      rescueThreshold: [0.3, 0.35, 0.4],
+      rescueTarget: [0.6, 0.7, 0.8],
+      descs: [
+        'Frontline units gain +20% HP. The first time one drops to 30% HP, it is healed back to 60% (once per battle).',
+        'Frontline units gain +45% HP. The first time one drops to 35% HP, it is healed back to 70% (once per battle).',
+        'Frontline units gain +80% HP. The first time one drops to 40% HP, it is healed back to 80% (once per battle).',
+      ],
     },
     enlighted: {
       name: 'Enlighted',
       icon: '✨',
-      breakpoints: [2, 3],
+      breakpoints: [2, 5],
       healCount: [1, 3], // how many wounded allies get healed each pulse
-      healPct: 0.1, // % of max hp restored per pulse
+      healPct: [0.3, 0.6], // % of max hp restored per pulse
       healEvery: 3, // seconds between pulses
       descs: [
-        'Every 3s, heal the most-wounded ally for 10% of its max HP.',
-        'Every 3s, heal the 3 most-wounded allies for 10% of their max HP.',
+        'Every 3s, heal the most-wounded ally for 30% of its max HP.',
+        'Every 3s, heal the 3 most-wounded allies for 60% of their max HP.',
       ],
     },
     darkarts: {
@@ -338,52 +363,27 @@
     marn: {
       name: 'Marn Elite',
       icon: '⚜️',
-      breakpoints: [2, 4, 6],
-      statPct: [0.15, 0.35, 0.65], // +HP AND +damage to Marn units
+      breakpoints: [2, 4, 6, 8, 10],
+      statPct: [0.08, 0.16, 0.24, 0.32, 0.4], // a little +HP AND +damage to Marn units
       descs: [
-        'Marn Elite units gain +15% HP and damage.',
-        'Marn Elite units gain +35% HP and damage.',
-        'Marn Elite units gain +65% HP and damage.',
-      ],
-    },
-    scavenger: {
-      name: 'Scavengers',
-      icon: '🩸',
-      breakpoints: [2, 3],
-      killHaste: [0.7, 0.55], // attack-interval multiplier after a takedown
-      descs: [
-        'On a takedown: lunge to the next foe and attack 30% faster for 5s (no stack).',
-        'On a takedown: lunge to the next foe and attack 45% faster for 5s (no stack).',
-      ],
-    },
-    guardian: {
-      name: 'Guardians',
-      icon: '🔰',
-      breakpoints: [2, 4],
-      shieldAdd: [40, 100], // flat bonus shield, baked in like a stat trait
-      descs: [
-        'Guardians gain +40 shield (flat damage reduction per hit).',
-        'Guardians gain +100 shield (flat damage reduction per hit).',
+        'Marn Elite units gain +8% HP and damage.',
+        'Marn Elite units gain +16% HP and damage.',
+        'Marn Elite units gain +24% HP and damage.',
+        'Marn Elite units gain +32% HP and damage.',
+        'Marn Elite units gain +40% HP and damage.',
       ],
     },
     berserker: {
       name: 'Berserkers',
       icon: '💢',
-      breakpoints: [2, 3],
-      maxBonus: [0.3, 0.5], // bonus dmg %, ramping up as the berserker loses hp
+      breakpoints: [2, 4, 6],
+      // bonus dmg % scales continuously across the WHOLE hp range: 0 bonus
+      // at full hp, the full maxBonus at 0 hp — the less hp, the more attack.
+      maxBonus: [0.25, 0.4, 0.55],
       descs: [
-        'Berserkers deal up to +30% bonus damage, scaling up as their HP drops below half.',
-        'Berserkers deal up to +50% bonus damage, scaling up as their HP drops below half.',
-      ],
-    },
-    assassin: {
-      name: 'Assassins',
-      icon: '🥷',
-      breakpoints: [2, 3],
-      bonus: [0.4, 0.7], // bonus dmg % vs a target still at full hp
-      descs: [
-        'Assassins deal +40% bonus damage to any target still at full HP.',
-        'Assassins deal +70% bonus damage to any target still at full HP.',
+        'Berserkers deal up to +25% bonus damage — the lower their HP, the more they deal.',
+        'Berserkers deal up to +40% bonus damage — the lower their HP, the more they deal.',
+        'Berserkers deal up to +55% bonus damage — the lower their HP, the more they deal.',
       ],
     },
     vampiric: {
@@ -396,33 +396,78 @@
         'Vampiric units heal for 25% of the damage they deal.',
       ],
     },
+    scavenger: {
+      name: 'Scavengers',
+      icon: '🩸',
+      breakpoints: [2, 3],
+      killHaste: [0.7, 0.55], // attack-interval multiplier after a takedown
+      descs: [
+        'On a takedown: lunge to the next foe and attack 30% faster for 5s (no stack).',
+        'On a takedown: lunge to the next foe and attack 45% faster for 5s (no stack).',
+      ],
+    },
     arcanist: {
       name: 'Arcanists',
       icon: '🌀',
-      breakpoints: [2, 3],
-      dmgPct: [0.25, 0.45], // bonus attack damage, same shape as marksman
+      breakpoints: [2, 4, 6, 8],
+      dmgPct: [0.15, 0.3, 0.45, 0.6], // bonus attack damage, rising with the comp
       descs: [
-        'Arcanists deal +25% bonus damage on every hit.',
+        'Arcanists deal +15% bonus damage on every hit.',
+        'Arcanists deal +30% bonus damage on every hit.',
         'Arcanists deal +45% bonus damage on every hit.',
+        'Arcanists deal +60% bonus damage on every hit.',
       ],
     },
-    ironclad: {
-      name: 'Ironclad',
-      icon: '🪨',
-      breakpoints: [2, 4],
-      reducePct: [0.12, 0.25], // % less damage taken, applied after shield
+    // A close-knit family of 6 small beasts. No combat stat bonus — the
+    // payoff is entirely economic: a guaranteed shop slot once you're
+    // committed, and their mightiest fighter once you've mastered the set.
+    // See NISMY_IDS / nismyGuaranteed() / nismyPool() for the shop logic.
+    nismy: {
+      name: 'Nismys',
+      icon: '🧸',
+      breakpoints: [3, 6],
       descs: [
-        'Ironclad units take 12% less damage on every hit.',
-        'Ironclad units take 25% less damage on every hit.',
+        'Once you have 3 Nismys, one shop slot every round is guaranteed to offer a Nismy.',
+        'The full family is assembled. Once all 6 Nismys have reached ★3, their mightiest fighter can appear in the shop for 5 gold.',
       ],
+    },
+    defender: {
+      name: 'Defenders',
+      icon: '🪖',
+      breakpoints: [1, 2, 3],
+      // TEAM-WIDE damage reduction — applies to every hit landed on the
+      // team, not just Defender-trait units. See resolveDamage().
+      reducePct: [0.06, 0.09, 0.12],
+      descs: [
+        'The whole team blocks 6% of every hit.',
+        'The whole team blocks 9% of every hit.',
+        'The whole team blocks 12% of every hit.',
+      ],
+    },
+    horseman: {
+      name: 'Horsemen',
+      icon: '🐴',
+      breakpoints: [2, 3],
+      // Baked into moveSpeed like a stat trait — Horsemen close the
+      // distance and reach the front line before anyone else on the field.
+      moveSpeedMult: [2, 2.5],
+      descs: [
+        'Horsemen move at 2x speed, charging in first.',
+        'Horsemen move at 2.5x speed, charging in first.',
+      ],
+    },
+    // Titan's own signature passive — a singleton trait, not a comp (there's
+    // only ever one Titan). Deliberately breaks the "every unit has 2-3
+    // traits" rule: Colossus alone is Titan's entire kit.
+    colossus: {
+      name: 'Colossus',
+      icon: '🌋',
+      breakpoints: [1],
+      pulseEvery: 3, // seconds between pulses
+      dmgPct: [0.08], // magic damage per pulse, as a % of the Colossus's own max HP
+      descs: ['Every 3s, deals magic damage equal to 8% of its own max HP to every enemy within 1 hex.'],
     },
   };
-  const BLEED_RATE = 0.015; // 1.5% of max hp per second — a single flat stack,
-  // refreshed to BLEED_TIME by every animal bite, never compounded
-  const BLEED_TIME = 3; // seconds
-  const SCAV_TIME = 5; // seconds a scavenger keeps its post-kill haste
-  const PACK_HASTE = 0.75; // attack-interval multiplier for a 2+ animal pack (lower = faster)
-
   const hasTrait = (u, t) => (u.traits || []).includes(t);
 
   // Distinct unit KINDS with the trait on a team's board (copies count once).
@@ -452,9 +497,11 @@
     return state.traitLvl[u.team][trait] || 0;
   }
 
-  // Bake stat traits (Frontline HP, Marn Elite stats, Guardian shield) into a
-  // unit's maxHp/dmg/shield for this battle, starting from its untouched base
-  // values. Called once at the bell after the trait snapshot is taken.
+  // Bake stat traits (Frontline HP, Marn Elite stats, Duelist baseline attack
+  // speed) into a unit's maxHp/dmg/atkInterval for this battle, starting from
+  // its untouched base values. Called once at the bell after the trait
+  // snapshot is taken — applyAnimalKit() runs right after and stacks its own
+  // bonuses multiplicatively on top of whatever this bakes in.
   function applyTraitBuffs() {
     state.units.forEach((u) => {
       let hpMult = 1;
@@ -468,8 +515,12 @@
       }
       u.maxHp = Math.round(u.baseMaxHp * hpMult);
       u.dmg = Math.round(u.baseDmg * dmgMult);
-      const gd = unitTraitLvl(u, 'guardian');
-      u.shield = (u.baseShield || 0) + (gd ? TRAITS.guardian.shieldAdd[gd - 1] : 0);
+      u.shield = u.baseShield || 0;
+      u.atkInterval = u.baseAtkInterval;
+      const mk = unitTraitLvl(u, 'marksman');
+      u.range = mk ? u.baseRange + TRAITS.marksman.rangeAdd[mk - 1] : u.baseRange;
+      const hs = unitTraitLvl(u, 'horseman');
+      u.moveSpeed = hs ? u.baseMoveSpeed * TRAITS.horseman.moveSpeedMult[hs - 1] : u.baseMoveSpeed;
       u.hp = u.maxHp;
     });
   }
@@ -492,7 +543,14 @@
 
   /* ---------------- shop ---------------- */
 
-  const poolForTier = (tier) => U.ALL_IDS.filter((id) => U.get(id).tier === tier);
+  // The Nismy family: 6 collectible base units, plus one capstone "Nismy
+  // Alpha" excluded from normal shop rolls (see poolForTier below) — it only
+  // enters the pool once all 6 base Nismys have been raised to ★3. See
+  // nismyPool()/nismyGuaranteed(), called from rollShop()/aiShop().
+  const NISMY_IDS = ['nismy_scout', 'nismy_guard', 'nismy_zapper', 'nismy_healer', 'nismy_hunter', 'nismy_trickster'];
+  const NISMY_ULTIMATE_ID = 'nismy_alpha';
+
+  const poolForTier = (tier) => U.ALL_IDS.filter((id) => U.get(id).tier === tier && id !== NISMY_ULTIMATE_ID);
 
   // Is this tier allowed to show up yet? (hard-gated by STAGE, matching the
   // odds table — a data mistake there can't leak a tier out early)
@@ -525,8 +583,38 @@
     return U.ALL_IDS[Math.floor(Math.random() * U.ALL_IDS.length)];
   }
 
+  // True once every base Nismy id is owned (bench OR board for the player;
+  // roster for the AI) at ★3 — the gate for Nismy Alpha entering the pool.
+  function nismyAllMaxed(team) {
+    const ownsAtStar3 = (id) => {
+      if (team === 'player') {
+        return (
+          state.bench.some((b) => b && b.id === id && b.star >= CONFIG.maxStar) ||
+          state.units.some((u) => u.team === 'player' && u.id === id && u.star >= CONFIG.maxStar)
+        );
+      }
+      return state.enemyRoster.some((r) => r.id === id && r.star >= CONFIG.maxStar);
+    };
+    return NISMY_IDS.every(ownsAtStar3);
+  }
+
+  // 3+ distinct Nismys fielded on the board unlocks the shop guarantee.
+  const nismyGuaranteed = (team) => traitCount(team, 'nismy') >= TRAITS.nismy.breakpoints[0];
+
+  // What the guaranteed slot can roll: the 6 base Nismys, plus Nismy Alpha
+  // once the whole family has reached ★3 (and tier 5 is otherwise unlocked).
+  function nismyPool(team) {
+    const pool = NISMY_IDS.slice();
+    if (nismyAllMaxed(team) && tierUnlocked(5)) pool.push(NISMY_ULTIMATE_ID);
+    return pool;
+  }
+
   function rollShop() {
     state.shop = Array.from({ length: CONFIG.shopSlots }, () => rollUnit(state.level));
+    if (nismyGuaranteed('player')) {
+      const pool = nismyPool('player');
+      state.shop[Math.floor(Math.random() * CONFIG.shopSlots)] = pool[Math.floor(Math.random() * pool.length)];
+    }
   }
 
   function reroll() {
@@ -620,7 +708,7 @@
     }
     // units on the board can only be sold during prep — they're fighting
     if (state.phase !== 'prep') return false;
-    const u = state.units.find((x) => x.uid === uid && x.team === 'player');
+    const u = state.units.find((x) => x.uid === uid && x.team === 'player' && !x.summon);
     if (u) {
       state.gold += statsOf(u.id, 1).cost * Math.pow(3, u.star - 1);
       state.units = state.units.filter((x) => x !== u);
@@ -716,14 +804,17 @@
       dmg: s.dmg,
       baseDmg: s.dmg,
       shield: s.shield,
-      baseShield: s.shield, // Guardian's shield bonus is baked on top of this
+      baseShield: s.shield,
       traits: s.traits,
-      bleedT: 0, // seconds of bleed left on this unit
-      bleedAcc: 0, // bled damage waiting to be shown as one popup
-      scavHasteT: 0, // scavenger post-kill haste countdown (never stacks)
+      scavHasteT: 0, // scavenger post-kill haste countdown (legacy field, unused)
       range: s.range,
+      baseRange: s.range, // untouched base — Marksman range bonus recomputes from this
       atkInterval: 1 / s.atkSpeed, // seconds between this unit's attacks
+      baseAtkInterval: 1 / s.atkSpeed, // untouched base — Animal speed bonuses recompute from this
+      frontlineRescued: false, // Frontline's once-per-battle near-death heal, already used?
+      colossusPulseT: null, // seconds until this Colossus's next AoE pulse
       moveSpeed: s.moveSpeed,
+      baseMoveSpeed: s.moveSpeed, // untouched base — Horseman speed bonus recomputes from this
       slots: s.slots,
       atkTimer: 0,
       moveTimer: 0,
@@ -733,6 +824,58 @@
       vx: null, // drawn position; eased during battle, snapped in prep
       vy: null,
     };
+  }
+
+  /* ---------------- animal kit ---------------- */
+
+  // Which specific animal units a team has fielded, and how big the pack is.
+  // Each present animal grants its own team-wide bonus (applyAnimalKit /
+  // applyAnimalLifesteal below), scaled by pack size (1-5).
+  function animalPackInfo(team) {
+    const ids = new Set();
+    state.units.forEach((u) => {
+      if (u.team === team && hasTrait(u, 'animal')) ids.add(u.id);
+    });
+    return {
+      size: ids.size,
+      hasSnake: ids.has('snake'),
+      hasBear: ids.has('bear'),
+      hasEagle: ids.has('eagle'),
+      hasLion: ids.has('lion'),
+      hasBeastMaster: ids.has('beastmaster'),
+    };
+  }
+
+  // Applies the Lion/Eagle/Bear/Snake bonuses team-wide, stacked multiplicatively
+  // on top of whatever applyTraitBuffs() already baked in. Beast Master's
+  // lifesteal is LIVE (see applyAnimalLifesteal, called from tick()) since it
+  // only matters at the moment damage is dealt.
+  function applyAnimalKit() {
+    ['player', 'enemy'].forEach((team) => {
+      const kit = state.animalKit && state.animalKit[team];
+      if (!kit || kit.size < 1) return;
+      const idx = kit.size - 1;
+      state.units.forEach((u) => {
+        if (u.team !== team) return;
+        if (kit.hasLion) u.maxHp = Math.round(u.maxHp * (1 + TRAITS.animal.hpPct[idx]));
+        if (kit.hasEagle) u.dmg = Math.round(u.dmg * (1 + TRAITS.animal.dmgPct[idx]));
+        if (kit.hasBear) u.shield = (u.shield || 0) + TRAITS.animal.shieldAdd[idx];
+        if (kit.hasSnake) u.atkInterval = u.baseAtkInterval * (1 - TRAITS.animal.atkSpeedPct[idx]);
+        u.hp = u.maxHp;
+      });
+    });
+  }
+
+  // Beast Master: every hit any team member lands heals the attacker for a %
+  // of the damage dealt, scaling with pack size — same shape as Vampiric but
+  // team-wide and gated on Beast Master being fielded rather than the trait.
+  function applyAnimalLifesteal(attacker, dealt) {
+    const kit = state.animalKit && state.animalKit[attacker.team];
+    if (!kit || !kit.hasBeastMaster || attacker.hp <= 0) return;
+    const gain = Math.min(Math.round(dealt * TRAITS.animal.lifePct[kit.size - 1]), attacker.maxHp - attacker.hp);
+    if (gain <= 0) return;
+    attacker.hp += gain;
+    state.hits.push({ col: attacker.col, row: attacker.row, amount: gain, targetUid: attacker.uid, fx: 'heal' });
   }
 
   /* ---------------- Dark Arts summon ---------------- */
@@ -765,17 +908,39 @@
   }
 
   // Re-forge each team's Dark Arts summon to match its CURRENT darkarts
-  // breakpoint (2/4/6/8 -> Dark Beast I/II/III/Dark Lady). Always strips any
-  // existing summon first, so a comp that drops back below 2 loses its beast
-  // and one that climbs a breakpoint gets the stronger form in its place.
-  // The summon fights like a normal unit but never counts toward the team's
-  // board cap (see boardCount) — it's a bonus body, not a purchased one.
+  // breakpoint (2/4/6/8 -> Dark Beast I/II/III/Dark Lady). An already-summoned
+  // beast is upgraded IN PLACE — same cell, new stats — so the player can drag
+  // it around the board during prep (moveOnBoard allows it) and it stays put
+  // across rounds instead of jumping to a random cell every re-sync. A comp
+  // that drops back below 2 loses its beast entirely; one that had none yet
+  // gets a fresh cell picked for it. Never counts toward the team's board cap
+  // (see boardCount) — it's a bonus body, not a purchased one.
   function syncDarkArtsSummons() {
     ['player', 'enemy'].forEach((team) => {
-      state.units = state.units.filter((u) => !(u.team === team && u.summon));
       const lvl = traitLevel(team, 'darkarts');
-      if (!lvl) return;
+      const existing = state.units.find((u) => u.team === team && u.summon);
+      if (!lvl) {
+        if (existing) state.units = state.units.filter((u) => u !== existing);
+        return;
+      }
       const def = DARK_SUMMON[lvl - 1];
+      if (existing) {
+        if (existing.id !== def.id) {
+          const s = statsOf(def.id, 1);
+          existing.id = def.id;
+          existing.maxHp = s.maxHp;
+          existing.baseMaxHp = s.maxHp;
+          existing.hp = s.maxHp;
+          existing.dmg = s.dmg;
+          existing.baseDmg = s.dmg;
+          existing.shield = s.shield;
+          existing.baseShield = s.shield;
+          existing.range = s.range;
+          existing.atkInterval = 1 / s.atkSpeed;
+          existing.moveSpeed = s.moveSpeed;
+        }
+        return; // same cell either way — it's already on the board
+      }
       const cell = summonCell(team);
       if (!cell) return; // board is completely full — the beast waits offstage
       state.units.push(makeSummonUnit(def.id, team, cell.col, cell.row));
@@ -792,7 +957,7 @@
     if (other) {
       // dropped onto one of your own units: they switch places — the board
       // unit takes the dragged unit's bench slot
-      if (other.team !== 'player') return false;
+      if (other.team !== 'player' || other.summon) return false;
       if (boardCount() - (other.slots || 1) + bSlots > maxBoardUnits()) return false;
       state.bench[bi] = { uid: other.uid, id: other.id, star: other.star };
       state.units = state.units.filter((x) => x !== other);
@@ -805,6 +970,10 @@
     return true;
   }
 
+  // The Dark Arts summon CAN be dragged around during prep like any other
+  // unit (it's a real board occupant) — it just can't swap places with a
+  // real unit, since it has no bench slot to send that unit's old position
+  // to. It can only move onto an empty cell.
   function moveOnBoard(uid, col, row) {
     if (state.phase !== 'prep' || !inBounds(col, row) || !isPlayerZone(row)) return false;
     const u = state.units.find((x) => x.uid === uid && x.team === 'player');
@@ -812,7 +981,7 @@
     const other = unitAt(col, row);
     if (other === u) return true;
     if (other) {
-      if (other.team !== 'player') return false;
+      if (other.team !== 'player' || other.summon || u.summon) return false;
       other.col = other.homeCol = u.col;
       other.row = other.homeRow = u.row;
     }
@@ -826,7 +995,7 @@
   // the board cell the dragged unit came from.
   function benchUnit(uid, slot) {
     if (state.phase !== 'prep') return false;
-    const u = state.units.find((x) => x.uid === uid && x.team === 'player');
+    const u = state.units.find((x) => x.uid === uid && x.team === 'player' && !x.summon);
     if (!u) return false;
     if (slot != null && slot >= 0 && slot < CONFIG.benchSlots && state.bench[slot]) {
       const b = state.bench[slot];
@@ -870,15 +1039,30 @@
           sustained dps, doubled per star, halved for 2-slot units.
        3. TRAITS   — aiValue boosts ANY unit for every roster-mate sharing a
           trait with it (generic over the whole TRAITS registry — animal,
-          marksman, frontline, enlighted, darkarts, marn, scavenger — so a
-          new comp added to TRAITS is understood automatically, no AI code
+          marksman, frontline, enlighted, darkarts, marn, berserker,
+          vampiric, arcanist, scavenger, nismy, defender, horseman, colossus —
+          so a new
+          comp added to TRAITS is understood automatically, no AI code
           change needed unless the comp's VALUE should weigh differently).
+          DARKARTS is an 8-unit comp
+          that summons a free Dark Beast (see syncDarkArtsSummons) which
+          doesn't cost a board slot — the AI doesn't need special-case code
+          for this: stacking darkarts units already scores higher via the
+          generic trait-synergy multiplier, and the summon is pure upside.
+          ANIMAL is exactly 5 units (Snake/Bear/Eagle/Lion/Beast Master),
+          each granting a different team-wide bonus (see applyAnimalKit) —
+          the AI doesn't need to know WHICH bonus each grants either: the
+          generic synergy boost already pushes it to collect distinct
+          animals, which is exactly the right call for this comp. NISMY does
+          need explicit AI code (aiShop's offer generation calls
+          nismyGuaranteed('enemy')/nismyPool('enemy')) since its payoff is a
+          shop-roll guarantee, not a stat the generic system can see.
        3b. COMPOSITION — aiValue also boosts a unit that fills a role the
           FIELDED board is short on: melee frontline, ranged backline, a
-          tanky damage-soaker (shield/frontline/guardian), and especially
-          any healing at all (biggest boost — zero sustain is the worst
-          gap). This is what stops the board from ending up all-melee,
-          all-glass, or with no support.
+          tanky damage-soaker (shield or frontline), and especially any
+          healing at all (biggest boost — zero sustain is the worst gap).
+          This is what stops the board from ending up all-melee, all-glass,
+          or with no support.
        4. MERGES   — DIVERSITY FIRST: at most one roster entry per unit id,
           ever. It'll merge a first triple into a ★2 (only starting that
           pair when the merged result would clearly upgrade its board, max
@@ -951,13 +1135,13 @@
     const rangedCount = n - meleeCount;
     const tankyCount = fielded.filter((r) => {
       const rs = roleOf(r);
-      return rs.shield > 0 || hasTrait(rs, 'frontline') || hasTrait(rs, 'guardian');
+      return rs.shield > 0 || hasTrait(rs, 'frontline');
     }).length;
     const hasHealer = fielded.some((r) => hasTrait(roleOf(r), 'enlighted'));
 
     if (s.range === 1 && meleeCount < Math.ceil(n * 0.5)) v *= 1.15; // needs more frontline
     if (s.range > 1 && rangedCount < Math.ceil(n * 0.3)) v *= 1.15; // needs backline damage
-    if ((s.shield > 0 || hasTrait(s, 'frontline') || hasTrait(s, 'guardian')) && tankyCount < Math.ceil(n * 0.3)) {
+    if ((s.shield > 0 || hasTrait(s, 'frontline')) && tankyCount < Math.ceil(n * 0.3)) {
       v *= 1.15; // needs more defense/tanks, not just raw damage
     }
     if (!hasHealer && hasTrait(s, 'enlighted')) v *= 1.35; // zero sustain is the biggest gap to close
@@ -1013,9 +1197,13 @@
       rolls += 1;
       // Spend on the BEST units first: the offer is considered in value order,
       // not slot order, so gold always chases the strongest thing available.
-      const offer = Array.from({ length: CONFIG.shopSlots }, () => rollUnit(state.level)).sort(
-        (a, b) => aiValue(b, 1) - aiValue(a, 1)
-      );
+      const offer = Array.from({ length: CONFIG.shopSlots }, () => rollUnit(state.level));
+      // same Nismy shop guarantee the player gets, taught to the AI too
+      if (nismyGuaranteed('enemy')) {
+        const pool = nismyPool('enemy');
+        offer.push(pool[Math.floor(Math.random() * pool.length)]);
+      }
+      offer.sort((a, b) => aiValue(b, 1) - aiValue(a, 1));
 
       for (const id of offer) {
         const s = statsOf(id, 1);
@@ -1223,12 +1411,9 @@
       u.col = u.homeCol;
       u.row = u.homeRow;
       u.hp = u.maxHp;
-      u.bleedT = 0;
-      u.bleedAcc = 0;
       u.scavHasteT = 0;
-      // everyone starts partway through their own swing, so the opening (and
-      // every later exchange) isn't one perfectly synchronised volley
-      u.atkTimer = u.atkInterval * (0.4 + Math.random() * 0.6);
+      u.frontlineRescued = false;
+      u.colossusPulseT = null;
       u.moveTimer = 0;
       u.targetUid = null;
       u.lungeT = 0;
@@ -1241,11 +1426,20 @@
       state.traitLvl.player[t] = traitLevel('player', t);
       state.traitLvl.enemy[t] = traitLevel('enemy', t);
     });
+    state.animalKit = { player: animalPackInfo('player'), enemy: animalPackInfo('enemy') };
     // re-forge the Dark Arts summon(s) to match the locked-in comp, in case
     // shopping since the last sync changed either team's darkarts count
     syncDarkArtsSummons();
-    // bake the stat comps (Frontline hp, Marn Elite stats) into the fighters
+    // bake the stat comps (Frontline hp, Marn Elite stats, Duelist speed)
+    // into the fighters, then stack the Animal kit's bonuses on top
     applyTraitBuffs();
+    applyAnimalKit();
+    // everyone starts partway through their own swing, so the opening (and
+    // every later exchange) isn't one perfectly synchronised volley — done
+    // AFTER the buffs above so it uses each unit's final atkInterval
+    state.units.forEach((u) => {
+      u.atkTimer = u.atkInterval * (0.4 + Math.random() * 0.6);
+    });
     state.healPulseT = TRAITS.enlighted.healEvery; // enlighted heal cadence
     state.projectiles = [];
     state.result = null;
@@ -1319,10 +1513,45 @@
     return { col: node.col, row: node.row, targetUid: goalFoe.uid };
   }
 
-  // Animal bite: just refreshes the timer to 3s — always a single stack, no
-  // matter how many animals are biting the same target at once.
-  function applyBleed(target) {
-    target.bleedT = BLEED_TIME;
+  // Shared by melee and landed-projectile damage: the shield blocks a flat
+  // amount, then Defenders shave a further % off for the WHOLE team (not
+  // just Defender-trait units), but a hit always lands for at least 1 so
+  // nothing can become unkillable.
+  function resolveDamage(target, rawDmg) {
+    const blocked = Math.min(target.shield || 0, Math.max(0, rawDmg - 1));
+    let afterShield = rawDmg - blocked;
+    const defLvl = state.traitLvl ? state.traitLvl[target.team].defender : 0;
+    if (defLvl) afterShield = Math.round(afterShield * (1 - TRAITS.defender.reducePct[defLvl - 1]));
+    const dealt = Math.max(1, afterShield);
+    target.hp = Math.max(0, target.hp - dealt);
+    maybeFrontlineRescue(target);
+    return { dealt, blocked };
+  }
+
+  // Frontline's near-death rescue: the FIRST time a frontline unit's hp
+  // drops to/below its breakpoint's threshold, it's instantly healed back up
+  // to the breakpoint's target — once only per battle (a killing blow that
+  // skips straight past the threshold to 0 is never rescued).
+  function maybeFrontlineRescue(u) {
+    const lvl = unitTraitLvl(u, 'frontline');
+    if (!lvl || u.frontlineRescued || u.hp <= 0) return;
+    if (u.hp > u.maxHp * TRAITS.frontline.rescueThreshold[lvl - 1]) return;
+    u.frontlineRescued = true;
+    const targetHp = Math.round(u.maxHp * TRAITS.frontline.rescueTarget[lvl - 1]);
+    const gain = targetHp - u.hp;
+    if (gain <= 0) return;
+    u.hp = targetHp;
+    state.hits.push({ col: u.col, row: u.row, amount: gain, targetUid: u.uid, fx: 'heal' });
+  }
+
+  // Vampiric: the attacker heals for a % of the damage it just dealt.
+  function applyVampiric(attacker, dealt) {
+    const lvl = unitTraitLvl(attacker, 'vampiric');
+    if (!lvl || attacker.hp <= 0) return;
+    const gain = Math.min(Math.round(dealt * TRAITS.vampiric.lifePct[lvl - 1]), attacker.maxHp - attacker.hp);
+    if (gain <= 0) return;
+    attacker.hp += gain;
+    state.hits.push({ col: attacker.col, row: attacker.row, amount: gain, targetUid: attacker.uid, fx: 'heal' });
   }
 
   // Scavengers: on a takedown, the killer's post-kill haste REFRESHES (never
@@ -1331,7 +1560,7 @@
   function triggerScavenger(killerUid, deadCol, deadRow, teleport) {
     const killer = state.units.find((x) => x.uid === killerUid && x.hp > 0);
     if (!killer || !unitTraitLvl(killer, 'scavenger')) return;
-    killer.scavHasteT = SCAV_TIME;
+    killer.scavHasteT = 5;
     if (teleport) {
       killer.col = deadCol;
       killer.row = deadRow;
@@ -1358,13 +1587,28 @@
           .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)
           .slice(0, count);
         wounded.forEach((u) => {
-          const gain = Math.min(Math.round(u.maxHp * TRAITS.enlighted.healPct), u.maxHp - u.hp);
+          const gain = Math.min(Math.round(u.maxHp * TRAITS.enlighted.healPct[lvl - 1]), u.maxHp - u.hp);
           if (gain <= 0) return;
           u.hp += gain;
           state.hits.push({ col: u.col, row: u.row, amount: gain, targetUid: u.uid, fx: 'heal' });
         });
       });
     }
+
+    // Colossus: a per-unit periodic AoE pulse (Titan's own passive, not a
+    // team comp — its damage is a % of ITS OWN max HP, not team-scaled).
+    state.units.forEach((u) => {
+      if (u.hp <= 0 || !hasTrait(u, 'colossus')) return;
+      u.colossusPulseT = (u.colossusPulseT == null ? TRAITS.colossus.pulseEvery : u.colossusPulseT) - step;
+      if (u.colossusPulseT > 0) return;
+      u.colossusPulseT += TRAITS.colossus.pulseEvery;
+      const dmg = Math.round(u.maxHp * TRAITS.colossus.dmgPct[0]);
+      state.units.forEach((f) => {
+        if (f.team === u.team || f.hp <= 0 || Hex.distance(u, f) > 1) return;
+        const { dealt, blocked } = resolveDamage(f, dmg);
+        state.hits.push({ col: f.col, row: f.row, amount: dealt, blocked, targetUid: f.uid, fx: 'impact' });
+      });
+    });
 
     // Act in a random order every tick. Iterating in array order meant players
     // always moved first, so the enemy got to path toward their finished
@@ -1379,24 +1623,6 @@
     order.forEach((u) => {
       if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - step);
       if (u.scavHasteT > 0) u.scavHasteT = Math.max(0, u.scavHasteT - step);
-      // bleeding (animal comp): always a single stack — any animal biting
-      // the target just refreshes the 3s timer, it never compounds.
-      if (u.bleedT > 0 && u.hp > 0) {
-        u.bleedT = Math.max(0, u.bleedT - step);
-        const d = u.maxHp * BLEED_RATE * step;
-        u.hp = Math.max(0, u.hp - d);
-        u.bleedAcc += d;
-        if (u.bleedAcc >= u.maxHp * BLEED_RATE || u.bleedT === 0 || u.hp === 0) {
-          state.hits.push({
-            col: u.col,
-            row: u.row,
-            amount: Math.max(1, Math.round(u.bleedAcc)),
-            targetUid: u.uid,
-            fx: 'bleed',
-          });
-          u.bleedAcc = 0;
-        }
-      }
       if (u.hp <= 0) return;
 
       const foes = state.units.filter((f) => f.team !== u.team && f.hp > 0);
@@ -1436,40 +1662,30 @@
         if (u.atkTimer <= 0) {
           // each unit swings at its OWN speed (atk_speed in units.csv), with a
           // little slop so the armies never settle into one coordinated beat.
-          // Speed sources multiply together: pack haste (2+ animals) and the
-          // scavenger's post-kill haste (never stacks with itself, but can
-          // stack with pack haste on a unit that's both, e.g. the Lion).
-          const packLvl =
-            state.traitLvl && hasTrait(u, 'animal') ? state.traitLvl[u.team].animal : 0;
-          const scavLvl = unitTraitLvl(u, 'scavenger');
           let speedMult = 1;
-          if (packLvl >= 1) speedMult *= PACK_HASTE;
+          const scavLvl = unitTraitLvl(u, 'scavenger');
           if (scavLvl && u.scavHasteT > 0) speedMult *= TRAITS.scavenger.killHaste[scavLvl - 1];
           u.atkTimer = u.atkInterval * (0.85 + Math.random() * 0.3) * speedMult;
           u.lungeT = CONFIG.lungeTime;
           u.lungeTo = { col: target.col, row: target.row };
 
-          // only the FULL animal pack (4) makes hits bleed
-          const bleeds = packLvl >= 2;
-
-          // Marksman/Dark Arts: flat bonus % damage. Berserker: bonus % that
-          // ramps up as the attacker's own HP drops below half. Assassin:
-          // bonus % against a target still untouched (still at full HP).
-          // All fold straight into the swing.
+          // Marksman/Arcanist: flat bonus % damage. Berserker: bonus % that
+          // ramps up as the attacker's own HP drops below half. All fold
+          // straight into the swing.
           let swingDmg = u.dmg;
-          const markLvl = unitTraitLvl(u, 'marksman');
-          if (markLvl) swingDmg += Math.round(u.dmg * TRAITS.marksman.dmgPct[markLvl - 1]);
-          const darkLvl = unitTraitLvl(u, 'darkarts');
-          if (darkLvl) swingDmg += Math.round(u.dmg * TRAITS.darkarts.bonus[darkLvl - 1]);
+          // Marksman: not breakpoint-gated (range IS the breakpoint reward,
+          // baked in by applyTraitBuffs) — every Marksman deals +dmgPerHex
+          // bonus damage for every hex of distance this specific shot travels.
+          if (hasTrait(u, 'marksman')) swingDmg += Math.round(u.dmg * bestD * TRAITS.marksman.dmgPerHex);
+          const arcLvl = unitTraitLvl(u, 'arcanist');
+          if (arcLvl) swingDmg += Math.round(u.dmg * TRAITS.arcanist.dmgPct[arcLvl - 1]);
           const berLvl = unitTraitLvl(u, 'berserker');
           if (berLvl) {
-            const hpFrac = u.hp / u.maxHp;
-            const rage = TRAITS.berserker.maxBonus[berLvl - 1] * Math.max(0, Math.min(1, (0.5 - hpFrac) / 0.5));
+            // continuous across the WHOLE hp range: full hp = no bonus,
+            // 0 hp = the full maxBonus — the less hp, the more attack.
+            const hpFrac = Math.max(0, Math.min(1, u.hp / u.maxHp));
+            const rage = TRAITS.berserker.maxBonus[berLvl - 1] * (1 - hpFrac);
             if (rage > 0) swingDmg += Math.round(u.dmg * rage);
-          }
-          const assLvl = unitTraitLvl(u, 'assassin');
-          if (assLvl && target.hp === target.maxHp) {
-            swingDmg += Math.round(u.dmg * TRAITS.assassin.bonus[assLvl - 1]);
           }
 
           if (u.range > 1) {
@@ -1479,7 +1695,6 @@
               targetUid: target.uid,
               dmg: swingDmg,
               t: bestD / CONFIG.projectileSpeed,
-              bleeds,
             });
             state.hits.push({
               fromCol: u.col,
@@ -1492,11 +1707,7 @@
             });
           } else {
             // melee: already at the target's hex, damage is immediate.
-            // The shield eats a flat chunk, but a hit always lands for at
-            // least 1 so nothing can become unkillable.
-            const blocked = Math.min(target.shield || 0, Math.max(0, swingDmg - 1));
-            const dealt = Math.max(1, swingDmg - blocked);
-            target.hp = Math.max(0, target.hp - dealt);
+            const { dealt, blocked } = resolveDamage(target, swingDmg);
             state.hits.push({
               fromCol: u.col,
               fromRow: u.row,
@@ -1507,7 +1718,8 @@
               targetUid: target.uid,
               fx: 'slash',
             });
-            if (bleeds) applyBleed(target); // animal claws open (or deepen) the wound
+            applyVampiric(u, dealt);
+            applyAnimalLifesteal(u, dealt);
             if (target.hp === 0) triggerScavenger(u.uid, target.col, target.row, true);
           }
         }
@@ -1535,10 +1747,12 @@
       if (p.t > 0) return true;
       const target = state.units.find((x) => x.uid === p.targetUid && x.hp > 0);
       if (!target) return false;
-      const blocked = Math.min(target.shield || 0, Math.max(0, p.dmg - 1));
-      const dealt = Math.max(1, p.dmg - blocked);
-      target.hp = Math.max(0, target.hp - dealt);
-      if (p.bleeds) applyBleed(target);
+      const { dealt, blocked } = resolveDamage(target, p.dmg);
+      const shooter = state.units.find((x) => x.uid === p.fromUid && x.hp > 0);
+      if (shooter) {
+        applyVampiric(shooter, dealt);
+        applyAnimalLifesteal(shooter, dealt);
+      }
       state.hits.push({
         col: target.col,
         row: target.row,
@@ -1627,8 +1841,12 @@
       u.maxHp = u.baseMaxHp || u.maxHp;
       u.dmg = u.baseDmg || u.dmg;
       u.shield = u.baseShield != null ? u.baseShield : u.shield;
+      u.atkInterval = u.baseAtkInterval || u.atkInterval;
+      u.range = u.baseRange || u.range;
+      u.moveSpeed = u.baseMoveSpeed || u.moveSpeed;
       u.hp = u.maxHp;
       u.scavHasteT = 0;
+      u.frontlineRescued = false;
       u.atkTimer = 0;
       u.moveTimer = 0;
       u.targetUid = null;
@@ -1656,6 +1874,9 @@
     state.phase = 'prep';
     // any 3-of-a-kind completed by mid-battle shopping evolves now
     checkMerges();
+    // keep each team's Dark Arts summon in sync with its comp for prep too,
+    // so it's visible on the field before the fight even starts
+    syncDarkArtsSummons();
     return true;
   }
 
@@ -1692,6 +1913,7 @@
       const row = CONFIG.rows - CONFIG.deployRows; // front row of your zone
       state.units.push(makeUnit(id, 'player', col, row, 1));
     }
+    syncDarkArtsSummons();
   }
 
   global.AB = {
